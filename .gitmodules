@@ -1,0 +1,12 @@
+[submodule "RV32I"]
+	path = RV32I
+	url = https://github.com/Sairam-Kesanapalli/RISC---RV32I.git
+[submodule "RISCV_RV32I_Single_Cycle"]
+	path = RISCV_RV32I_Single_Cycle
+	url = https://github.com/Sairam-Kesanapalli/RISC---RV32I.git
+[submodule "RISCV_RV32I_Multi_cycle"]
+	path = RISCV_RV32I_Multi_cycle
+	url = https://github.com/Sairam-Kesanapalli/RISCV_RV32I_Multi_Cycle.git
+[submodule "RISCV_RV32IM_Multi_Cycle"]
+	path = RISCV_RV32IM_Multi_Cycle
+	url = https://github.com/Sairam-Kesanapalli/RISCV_RV32IM_Multi_Cycle.git
