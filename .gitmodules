@@ -10,3 +10,6 @@
 [submodule "RISCV_RV32IM_Multi_Cycle"]
 	path = RISCV_RV32IM_Multi_Cycle
 	url = https://github.com/Sairam-Kesanapalli/RISCV_RV32IM_Multi_Cycle.git
+[submodule "RISCV_RV32IM_Pipelined"]
+	path = RISCV_RV32IM_Pipelined
+	url = https://github.com/Sairam-Kesanapalli/RISCV_RV32IM_Pipelined.git
