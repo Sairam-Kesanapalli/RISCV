@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RV32I Multi-Cycle — Design Q&A</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d0f0e;
+    --bg2:       #141716;
+    --bg3:       #1b1f1d;
+    --border:    #2a2f2c;
+    --border2:   #353b37;
+    --green:     #4af28a;
+    --green-dim: #1f4a32;
+    --amber:     #f2c94c;
+    --amber-dim: #3d3010;
+    --red:       #f25c5c;
+    --red-dim:   #3d1515;
+    --blue:      #5ca4f2;
+    --blue-dim:  #152040;
+    --text:      #d4dbd6;
+    --text2:     #8a9b8e;
+    --text3:     #526057;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    border-bottom: 1px solid var(--border);
+    padding: 48px 0 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .site-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 80px,
+      rgba(74,242,138,0.025) 80px,
+      rgba(74,242,138,0.025) 81px
+    );
+    pointer-events: none;
+  }
+  .header-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 32px;
+    position: relative;
+  }
+  .header-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--green);
+    border: 1px solid var(--green-dim);
+    background: rgba(74,242,138,0.05);
+    padding: 4px 12px;
+    border-radius: 2px;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+  }
+  .header-chip::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+  h1 span { color: var(--green); }
+  .subtitle {
+    font-size: 14px;
+    color: var(--text2);
+    font-weight: 300;
+    max-width: 560px;
+  }
+
+  /* ── TOC ── */
+  .toc-bar {
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .toc-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toc-inner::-webkit-scrollbar { display: none; }
+  .toc-item {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text3);
+    text-decoration: none;
+    padding: 14px 16px;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .toc-item:hover { color: var(--green); border-bottom-color: var(--green); }
+
+  /* ── Main layout ── */
+  .main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 32px 80px;
+  }
+
+  /* ── Section headers ── */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 48px 0 24px;
+  }
+  .section-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+  .section-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .section-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+    flex-shrink: 0;
+  }
+
+  /* ── Q&A Card ── */
+  .qa-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 32px;
+    background: var(--bg2);
+  }
+
+  .question-block {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 24px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .q-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--amber);
+    background: var(--amber-dim);
+    border: 1px solid rgba(242,201,76,0.2);
+    padding: 3px 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .question-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    line-height: 1.5;
+  }
+  .question-text code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,0.07);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--amber);
+  }
+
+  .answer-block {
+    padding: 24px;
+  }
+  .a-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--green);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .a-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--green-dim);
+  }
+
+  /* ── Answer body typography ── */
+  .answer-body { font-size: 14px; color: var(--text); }
+  .answer-body p { margin-bottom: 16px; line-height: 1.75; }
+  .answer-body p:last-child { margin-bottom: 0; }
+
+  .answer-body strong {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  /* ── Code blocks ── */
+  .code-block {
+    background: #0a0c0b;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green-dim);
+    border-radius: 3px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-lang {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+  .code-block pre {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c8d8cc;
+    padding: 16px 18px;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-block pre .c  { color: var(--text3); font-style: italic; }   /* comment */
+  .code-block pre .kw { color: var(--blue); }                        /* keyword */
+  .code-block pre .s  { color: var(--green); }                       /* signal/string */
+  .code-block pre .n  { color: var(--amber); }                       /* number */
+  .code-block pre .op { color: var(--text2); }                       /* operator */
+
+  /* ── Diagram / ascii art ── */
+  .diagram {
+    background: #0a0c0b;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue-dim);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.7;
+    white-space: pre;
+  }
+
+  /* ── Tables ── */
+  .answer-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .answer-table th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text2);
+    background: var(--bg3);
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .answer-table td {
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  .answer-table tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+  .answer-table td code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber);
+  }
+  .answer-table td strong { color: #fff; font-weight: 500; }
+
+  /* ── Callout boxes ── */
+  .callout {
+    border-radius: 3px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    line-height: 1.65;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .callout-key { border: 1px solid var(--green); background: rgba(74,242,138,0.06); }
+  .callout-warn { border: 1px solid rgba(242,201,76,0.3); background: var(--amber-dim); }
+  .callout-bug  { border: 1px solid rgba(242,92,92,0.3);  background: var(--red-dim); }
+  .callout-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .callout-body strong { color: #fff; font-weight: 500; }
+
+  /* ── Inline code ── */
+  .answer-body code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--amber);
+  }
+
+  /* ── Section title h2 ── */
+  .qa-section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin: 20px 0 10px;
+  }
+
+  /* ── Sub-lists ── */
+  .answer-body ul, .answer-body ol {
+    padding-left: 20px;
+    margin-bottom: 16px;
+  }
+  .answer-body li {
+    margin-bottom: 6px;
+    line-height: 1.65;
+  }
+  .answer-body li code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--amber);
+  }
+
+  /* ── Footer ── */
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 32px;
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .footer-text {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+  }
+  .footer-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--green);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ HEADER -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-chip">RV32I · Multi-Cycle Design</div>
+    <h1>Design <span>&amp;</span> Implementation Q&amp;A</h1>
+    <p class="subtitle">All doubts, answers, and explanations from the multi-cycle processor design session. Covers datapath transitions, FSM control logic, hazard handling, and verification methodology.</p>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════ TOC -->
+<nav class="toc-bar">
+  <div class="toc-inner">
+    <a class="toc-item" href="#s1">01 · Decode Stage ALU</a>
+    <a class="toc-item" href="#s2">02 · PC Arithmetic</a>
+    <a class="toc-item" href="#s3">03 · branch_taken Signal</a>
+    <a class="toc-item" href="#s4">04 · Memory States</a>
+    <a class="toc-item" href="#s5">05 · ALUOut vs alu_result</a>
+    <a class="toc-item" href="#s6">06 · Same-Cycle branch_taken</a>
+    <a class="toc-item" href="#s7">07 · SVT Golden Model</a>
+    <a class="toc-item" href="#s8">08 · Regression Suite</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════ MAIN -->
+<main class="main">
+
+
+  <!-- ─────────────────────── SECTION 1 ─────────────────────── -->
+  <div class="section-divider" id="s1">
+    <span class="section-num">01</span>
+    <div class="section-line"></div>
+    <span class="section-tag">Decode Stage</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">Why are ALU operations present in the DECODE block? The decode block's duty is just to decode the instruction, right?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>You're right that in a single-cycle or pipeline context, Decode just reads registers and generates control signals. But in a multi-cycle design, <strong>the DECODE state is a free clock cycle where the ALU is sitting completely idle</strong>. The FSM exploits that idle hardware to precompute things that will be needed later.</p>
+
+        <div class="callout callout-key">
+          <span class="callout-icon">◆</span>
+          <div class="callout-body"><strong>Core principle:</strong> In a multi-cycle design, you have exactly one ALU shared across all stages. Any cycle where the ALU would otherwise be idle is an opportunity to precompute something that saves a future state. DECODE is always idle from the ALU's perspective.</div>
+        </div>
+
+        <p class="qa-section-title">For branches → BRANCH_EX path</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">SystemVerilog — DECODE state</span></div>
+          <pre><span class="c">// Non-jump path in DECODE</span>
+ALUSrcA_ctrl = <span class="n">2'b00</span>; <span class="c">// PC</span>
+ALUSrcB_ctrl = <span class="n">2'b10</span>; <span class="c">// imm</span>
+ALU_OP       = <span class="n">3'd3</span>;  <span class="c">// ADD → ALUOut = PC + imm (branch target)</span></pre>
+        </div>
+        <p>The branch target <code>PC + imm</code> gets computed and <strong>saved into ALUOut</strong> at the end of DECODE. Then in <code>BRANCH_EX</code>, the ALU is busy doing <code>A − B</code> to evaluate condition flags. If the branch is taken, where does the target come from? Straight from <code>ALUOut</code> via <code>PCSource_ctrl = 2'b01</code>. If you hadn't precomputed it here, you'd need a dedicated extra state just to calculate the branch target.</p>
+
+        <p class="qa-section-title">For jumps JAL/JALR → JUMP_EX / JALR_EX path</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">SystemVerilog — DECODE state (jump path)</span></div>
+          <pre>ALUSrcA_ctrl = <span class="n">2'b00</span>; <span class="c">// PC</span>
+ALUSrcB_ctrl = <span class="n">2'b01</span>; <span class="c">// 4</span>
+ALU_OP       = <span class="n">3'd3</span>;  <span class="c">// ADD → ALUOut = PC + 4 (return address)</span></pre>
+        </div>
+        <p>JAL and JALR must write <code>PC + 4</code> into <code>rd</code> as the return address. In <code>JUMP_EX</code>/<code>JALR_EX</code>, the ALU is busy computing the jump target (<code>PC + imm</code> or <code>A + imm</code>). So the return address <code>PC + 4</code> is precomputed here and saved into <code>ALUOut</code>. The write-back in <code>JUMP_EX</code> then uses <code>MemToReg = 0</code> which selects <code>ALUOut</code> — that's how <code>rd</code> gets <code>PC + 4</code> without needing an extra adder or an extra state.</p>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">△</span>
+          <div class="callout-body"><strong>The DECODE precomputation isn't "for every non-jump instruction"</strong> — it specifically serves branches and AUIPC. For R-type, I-type, Load, Store, LUI — this computation happens but gets overwritten by the ALU in the next state. It's wasted work but harmless, because the FSM has no cheaper way to handle branches and AUIPC without a dedicated extra state.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 2 ─────────────────────── -->
+  <div class="section-divider" id="s2">
+    <span class="section-num">02</span>
+    <div class="section-line"></div>
+    <span class="section-tag">PC Arithmetic</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">For every operation except jump type, does PC get added with imm? Are there no cases where PC = PC + 4? Tell me in which operations PC is added with immediate and in which cases added with 4.</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p class="qa-section-title">PC = PC + imm (PC actually jumps)</p>
+        <table class="answer-table">
+          <thead><tr><th>Instruction</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>JAL</code></td><td>Unconditional jump by offset from PC</td></tr>
+            <tr><td><code>Branch (taken)</code></td><td>Condition passed — jumps to PC + offset</td></tr>
+          </tbody>
+        </table>
+        <p>That's it. <strong>Only 2 cases</strong> where PC itself moves by an immediate.</p>
+
+        <p class="qa-section-title">PC = PC + 4 (normal sequential flow)</p>
+        <table class="answer-table">
+          <thead><tr><th>Instruction</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>R-type</code></td><td>Pure register arithmetic, no jump</td></tr>
+            <tr><td><code>I-type arithmetic</code></td><td>Same — result goes to rd, PC moves forward</td></tr>
+            <tr><td><code>Load (LW)</code></td><td>Loads a value, PC still sequential</td></tr>
+            <tr><td><code>Store (SW)</code></td><td>Writes memory, PC still sequential</td></tr>
+            <tr><td><code>Branch (not taken)</code></td><td>Condition failed — just move on</td></tr>
+            <tr><td><code>LUI</code></td><td>Just writes a constant to rd</td></tr>
+            <tr><td><code>AUIPC</code></td><td>rd = PC + imm, but <strong>PC itself</strong> still goes +4</td></tr>
+            <tr><td><code>JALR</code></td><td>PC = (rs1 + imm) &amp; ~1, not PC + imm</td></tr>
+          </tbody>
+        </table>
+
+        <p class="qa-section-title">Now look at your DECODE block again</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">SystemVerilog</span></div>
+          <pre><span class="c">// Non-jump path</span>
+ALUSrcA_ctrl = <span class="n">2'b00</span>; <span class="c">// PC</span>
+ALUSrcB_ctrl = <span class="n">2'b10</span>; <span class="c">// imm  ← PC + imm into ALUOut</span></pre>
+        </div>
+        <p>This precomputed <code>ALUOut = PC + imm</code> is <strong>only actually consumed</strong> by two cases:</p>
+        <ul>
+          <li><code>BRANCH_EX</code> — uses <code>ALUOut</code> as the branch target if taken</li>
+          <li><code>AUIPC_EX</code> — uses <code>ALUOut</code> as the value written to <code>rd</code></li>
+        </ul>
+        <p>For R-type, I-type, Load, Store, LUI — this computation happens but <strong>gets overwritten</strong> by the ALU in the next state. It's wasted work but harmless, because the FSM has no cheaper way to handle branches and AUIPC without a dedicated extra state.</p>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 3 ─────────────────────── -->
+  <div class="section-divider" id="s3">
+    <span class="section-num">03</span>
+    <div class="section-line"></div>
+    <span class="section-tag">branch_taken Signal</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">How is <code>branch_taken</code> enabled? Who turns it to 1?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p><strong>Nobody in the control unit.</strong> Look at the top module — <code>branch_taken</code> is a <strong>combinational block in the datapath</strong>, computed from ALU flags:</p>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">SystemVerilog — rv32i_multi_cycle.sv (top module)</span></div>
+          <pre><span class="kw">reg</span> branch_taken;
+<span class="kw">always</span> @(*) <span class="kw">begin</span>
+    <span class="kw">case</span>(funct3)
+        <span class="n">3'b000</span> : branch_taken = zero_flag;            <span class="c">// BEQ</span>
+        <span class="n">3'b001</span> : branch_taken = ~zero_flag;           <span class="c">// BNE</span>
+        <span class="n">3'b100</span> : branch_taken = negative ^ overflow;  <span class="c">// BLT</span>
+        <span class="n">3'b101</span> : branch_taken = ~(negative ^ overflow);<span class="c">// BGE</span>
+        <span class="n">3'b110</span> : branch_taken = ~carry_out;           <span class="c">// BLTU</span>
+        <span class="n">3'b111</span> : branch_taken = carry_out;            <span class="c">// BGEU</span>
+        <span class="kw">default</span>: branch_taken = <span class="n">0</span>;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></pre>
+        </div>
+
+        <p>This wire then goes <strong>into</strong> the control unit as an input (<code>input branch_taken</code>). The FSM doesn't set it — it just reads it. The flow is:</p>
+
+        <div class="diagram">BRANCH_EX state sets ALUSrcA=A, ALUSrcB=B, ALU_OP=SUB
+  → ALU computes A−B
+  → produces zero_flag / negative / overflow
+  → branch_taken logic evaluates combinationally
+  → FSM reads branch_taken to decide next_state</div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 4 ─────────────────────── -->
+  <div class="section-divider" id="s4">
+    <span class="section-num">04</span>
+    <div class="section-line"></div>
+    <span class="section-tag">Memory States</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">Why are there so many memory states — <code>MEM_ADDR</code>, <code>MEM_READ</code>, <code>MEM_WB</code>, <code>MEM_WRITE</code>? What is each one for?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>Because a load (<code>LW</code>) and a store (<code>SW</code>) are genuinely different operations that share an address calculation step but diverge after it. The state machine splits them cleanly:</p>
+
+        <div class="diagram">MEM_ADDR  →  computes ALUOut = A + imm  (effective address)
+               |
+        ┌──────┴──────┐
+       LW             SW
+        ↓              ↓
+    MEM_READ       MEM_WRITE
+    (MemRead=1)    (MemWrite=1 → done, go to PC_INC)
+        ↓
+    MEM_WB
+    (RegWrite=1, write MDR into rd)
+    (also does PC+4 concurrently here!)</div>
+
+        <table class="answer-table">
+          <thead><tr><th>State</th><th>What it does</th><th>Key signals</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>MEM_ADDR</code></td>
+              <td>ALU computes <code>A + imm</code>. Result saved in <code>ALUOut</code>. Used by both LW and SW.</td>
+              <td><code>ALUSrcA=A, ALUSrcB=imm, ALU_OP=ADD</code></td>
+            </tr>
+            <tr>
+              <td><code>MEM_READ</code></td>
+              <td>Asserts <code>MemRead=1</code>. Memory reads from <code>ALUOut</code> address and puts data into <code>MDR</code> at the next clock edge.</td>
+              <td><code>MemRead=1</code></td>
+            </tr>
+            <tr>
+              <td><code>MEM_WB</code></td>
+              <td>Asserts <code>RegWrite=1, MemToReg=1</code> — writes <code>MDR</code> into destination register. Also does <code>PC+4</code> concurrently.</td>
+              <td><code>RegWrite=1, MemToReg=1, PCWrite=1</code></td>
+            </tr>
+            <tr>
+              <td><code>MEM_WRITE</code></td>
+              <td>Asserts <code>MemWrite=1</code>. Writes <code>read_data2</code> to memory at the <code>ALUOut</code> address. Done in one state, goes straight to <code>PC_INC</code>.</td>
+              <td><code>MemWrite=1</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p><strong>Why are MEM_READ and MEM_WB two separate states for loads?</strong> Memory can't read and write-back in the same cycle. The read happens in <code>MEM_READ</code>, latches into <code>MDR</code> at the clock edge, then <code>MEM_WB</code> reads from <code>MDR</code>. Stores don't need this second step — once the address is in <code>ALUOut</code> and <code>MemWrite=1</code>, the store completes in one cycle.</p>
+
+        <p><strong>Why does MEM_WB also do PC+4?</strong> This is the concurrent PC increment optimization — the ALU is free during write-back, so the FSM uses it to compute <code>PC+4</code> at the same time, saving one full state cycle.</p>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 5 ─────────────────────── -->
+  <div class="section-divider" id="s5">
+    <span class="section-num">05</span>
+    <div class="section-line"></div>
+    <span class="section-tag">ALUOut vs alu_result</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text"><code>ALUOut</code> and <code>alu_result</code> — are these different things? How does a single ALU produce two different outputs? How does <code>ALUOut</code> get its value assigned in the DECODE stage?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>There is <strong>one physical ALU</strong>, one output wire called <code>alu_result</code>. <code>ALUOut</code> is a <strong>register (flip-flop)</strong> that captures <code>alu_result</code> at the clock edge. Think of it as memory for the ALU's previous result.</p>
+
+        <div class="diagram">      [ALU] ──── alu_result  (combinational wire, changes every cycle)
+                   │
+              [ALUOut reg] ──── ALUOut  (holds alu_result from PREVIOUS cycle)</div>
+
+        <p class="qa-section-title">Why this matters — across two cycles for branches</p>
+        <div class="diagram">Cycle (DECODE):
+  ALU computes PC + imm → alu_result = 0x104
+  Clock edge: ALUOut ← 0x104
+
+Cycle (BRANCH_EX):
+  ALU now computes A − B → alu_result = 0x000 (for flags)
+  ALUOut still holds 0x104 from last cycle
+
+If branch taken:
+  PCSource_ctrl = 2'b01 → PC = ALUOut = 0x104  ✓</div>
+
+        <p>The ALU did two different things in two consecutive cycles. <code>ALUOut</code> preserved the first result while the ALU was busy doing the second computation. <strong>That is the entire point of the state registers.</strong></p>
+
+        <p class="qa-section-title">How does ALUOut get assigned?</p>
+        <p>It is supposed to be updated every clock cycle with <code>ALUOut &lt;= alu_result</code>, making it a one-cycle-delayed version of <code>alu_result</code>. However — look at your current top module:</p>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">SystemVerilog — rv32i_multi_cycle.sv (current state)</span></div>
+          <pre><span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (!rst_n) <span class="kw">begin</span>
+        IR     &lt;= <span class="n">32'b0</span>; MDR &lt;= <span class="n">32'b0</span>;
+        A      &lt;= <span class="n">32'b0</span>; B   &lt;= <span class="n">32'b0</span>; ALUOut &lt;= <span class="n">32'b0</span>;
+    <span class="kw">end else begin</span>
+        <span class="kw">if</span> (IRWrite) IR &lt;= mem_instr;
+        <span class="c">// MDR    &lt;= mem_data;    ← COMMENTED OUT</span>
+        <span class="c">// A      &lt;= read_data1;  ← COMMENTED OUT</span>
+        <span class="c">// B      &lt;= read_data2;  ← COMMENTED OUT</span>
+        <span class="c">// ALUOut &lt;= alu_result;  ← COMMENTED OUT  ← BUG</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+        </div>
+
+        <div class="callout callout-bug">
+          <span class="callout-icon">✕</span>
+          <div class="callout-body"><strong>Active bug in current code:</strong> <code>ALUOut</code>, <code>MDR</code>, <code>A</code>, and <code>B</code> are never actually updated — they stay 0 forever. The write-back <code>assign write_data = (MemToReg)? MDR : ALUOut</code> is reading stale zeros. Uncommenting these four lines is the immediate next step to wire up.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 6 ─────────────────────── -->
+  <div class="section-divider" id="s6">
+    <span class="section-num">06</span>
+    <div class="section-line"></div>
+    <span class="section-tag">Same-Cycle branch_taken</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">In the current cycle, the control unit has <code>BRANCH_EX</code> as the current state. It sends the ALU to check subtraction. But how does it also read <code>branch_taken</code> in the same state — the ALU hasn't finished yet when the <code>if (branch_taken)</code> check happens, right?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>This is the most important digital design concept to internalize. The answer is: <strong>combinational logic has no concept of "same state" time — it all settles instantly.</strong></p>
+
+        <p class="qa-section-title">What is clocked vs what is combinational</p>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">concept</span></div>
+          <pre>CLOCKED (only these wait for clock edge):
+  current_state   ← next_state
+  PC              ← PC_next      (if PCWrite)
+  ALUOut          ← alu_result
+  A, B, MDR, IR   ← their inputs
+
+COMBINATIONAL (no clock, settles in nanoseconds):
+  control unit output logic   always @(*)
+  ALU computation             pure gates
+  branch_taken logic          always @(*)</pre>
+        </div>
+
+        <p>Within one clock cycle, this entire chain resolves <strong>simultaneously, like dominoes:</strong></p>
+
+        <div class="diagram">current_state = BRANCH_EX  (stable register value)
+        │
+        ▼
+control unit always@(*) fires
+→ outputs ALUSrcA=A, ALUSrcB=B, ALU_OP=SUB
+        │
+        ▼
+ALU combinationally computes A−B
+→ produces zero_flag, negative, overflow
+        │
+        ▼
+branch_taken always@(*) fires
+→ evaluates e.g. zero_flag for BEQ
+        │
+        ▼
+control unit always@(*) fires AGAIN
+(branch_taken is in its sensitivity list)
+→ now sets PCWrite=1, PCSource_ctrl=2'b01
+        │
+        ▼
+    clock edge arrives
+→ PC latches PC_next, state latches next_state</pre>
+        </div>
+
+        <p>The <code>always @(*)</code> in your control unit re-evaluates <strong>every time any input changes</strong>, including <code>branch_taken</code>. So the simulator sees:</p>
+        <ul>
+          <li>First pass: <code>branch_taken</code> is whatever it was → control unit settles partially</li>
+          <li><code>branch_taken</code> changes because ALU flags changed → control unit re-evaluates</li>
+          <li>Everything settles to final stable values</li>
+          <li>Clock edge arrives and latches the final stable values</li>
+        </ul>
+
+        <div class="callout callout-key">
+          <span class="callout-icon">◆</span>
+          <div class="callout-body"><strong>There is no contradiction.</strong> The <code>if (branch_taken)</code> inside <code>BRANCH_EX</code> is not an if-statement executing over time — it is <strong>hardware wiring</strong>. It permanently connects <code>branch_taken</code> to the enable of <code>PCWrite</code>. When <code>branch_taken</code> is 1, <code>PCWrite</code> is 1. When it's 0, <code>PCWrite</code> is 0. All within the same cycle, all before the clock edge.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 7 ─────────────────────── -->
+  <div class="section-divider" id="s7">
+    <span class="section-num">07</span>
+    <div class="section-line"></div>
+    <span class="section-tag">SVT Golden Model</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">The SVT plan hardcodes expected register values for a specific program. How can I use different instructions and either feed expected results manually, or automatically generate them so I don't have to recalculate by hand every time I change the program?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>The hardcoded SVT is essentially a snapshot test — it breaks the moment you touch <code>instruction_mem.v</code>. The right fix is a <strong>Python golden model</strong> that reads the same memory file your RTL uses and auto-generates expected values.</p>
+
+        <div class="diagram">instruction_mem.v
+      │
+      ├──→ RTL (Verilator/iverilog) ──→ actual register dump
+      │
+      └──→ Python ISS ─────────────→ expected register dump
+                                              │
+                                              ▼
+                                      auto-generate
+                                      expected_regs.hex</div>
+
+        <p class="qa-section-title">Approach 1 — Self-Checking Program (simplest)</p>
+        <p>Instead of the testbench checking register values, <strong>the program itself checks its own results</strong> and writes a pass/fail to a magic memory address. Your testbench only watches that address. This is exactly the <code>bp_finish(0/1)</code> pattern from BlackParrot.</p>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Assembly concept</span></div>
+          <pre>addi x1, x0, 5
+addi x2, x0, 3
+add  x3, x1, x2        <span class="c"># x3 should be 8</span>
+
+addi x4, x0, 8         <span class="c"># load expected value</span>
+beq  x3, x4, PASS      <span class="c"># if correct, jump to pass</span>
+FAIL:
+  sw x0, 0(x0)         <span class="c"># write 0 to mem[0] = FAIL signal</span>
+  j END
+PASS:
+  addi x5, x0, 1
+  sw x5, 0(x0)         <span class="c"># write 1 to mem[0] = PASS signal</span>
+END:</pre>
+        </div>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Verilog testbench — only checks one address</span></div>
+          <pre><span class="kw">initial begin</span>
+  <span class="n">#2000</span>;
+  <span class="kw">if</span> (dut.dm.mem[<span class="n">0</span>] == <span class="n">32'd1</span>)
+    $display(<span class="s">"[SVT PASS]"</span>);
+  <span class="kw">else</span>
+    $display(<span class="s">"[SVT FAIL] mem[0] = %0d"</span>, dut.dm.mem[<span class="n">0</span>]);
+<span class="kw">end</span></pre>
+        </div>
+
+        <p class="qa-section-title">Approach 2 — Python Golden Model (best for your use case)</p>
+        <p>Write a tiny Python RV32I simulator that reads the same <code>instruction_mem.v</code> your RTL uses, simulates it, and auto-generates the expected values. The Makefile runs Python before every simulation so expected values are always in sync.</p>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Python — golden_model.py (key structure)</span></div>
+          <pre><span class="kw">def</span> simulate(instrs, steps=<span class="n">200</span>):
+    regs = [<span class="n">0</span>] * <span class="n">32</span>
+    mem  = {}
+    pc   = <span class="n">0</span>
+
+    <span class="kw">for</span> _ <span class="kw">in</span> range(steps):
+        instr  = instrs[pc >> <span class="n">2</span>]
+        opcode = instr & <span class="n">0x7F</span>
+        <span class="c"># ... decode fields ...</span>
+
+        <span class="kw">if</span> opcode == <span class="n">0x33</span>:   <span class="c"># R-type: ADD, SUB, AND, OR ...</span>
+            regs[rd] = (r1 + r2) & <span class="n">0xFFFFFFFF</span>
+        <span class="kw">elif</span> opcode == <span class="n">0x13</span>: <span class="c"># I-type: ADDI, XORI ...</span>
+            regs[rd] = (r1 + i_imm) & <span class="n">0xFFFFFFFF</span>
+        <span class="c"># ... all other opcodes ...</span>
+
+    <span class="kw">return</span> regs, mem, pc
+
+<span class="c"># Emit .hex files for $readmemh in testbench</span>
+<span class="kw">with</span> open(<span class="s">"expected_regs.hex"</span>, <span class="s">'w'</span>) <span class="kw">as</span> f:
+    <span class="kw">for</span> v <span class="kw">in</span> regs:
+        f.write(<span class="s">f"{v:08x}\n"</span>)</pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Makefile — auto-regenerates golden before every sim</span></div>
+          <pre>svt: expected_regs.hex svt_sim
+	./svt_sim
+
+expected_regs.hex: src/instruction_mem.v
+	python3 golden_model.py    <span class="c"># runs only when imem changes</span>
+
+svt_sim: tb/svt_tb.v src/*.v
+	iverilog -o svt_sim tb/svt_tb.v src/*.v</pre>
+        </div>
+
+        <p>Now when you change <code>instruction_mem.v</code>, <code>make svt</code> automatically regenerates expected values before running the testbench. No manual update ever needed.</p>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────── SECTION 8 ─────────────────────── -->
+  <div class="section-divider" id="s8">
+    <span class="section-num">08</span>
+    <div class="section-line"></div>
+    <span class="section-tag">Regression Suite</span>
+  </div>
+
+  <div class="qa-card">
+    <div class="question-block">
+      <span class="q-label">Q</span>
+      <div class="question-text">I want per-instruction regression tests in a <code>tests/</code> directory (add_test, sub_test, branch_test etc.) that I can run all at once and get pass/fail output per test. I have a golden model Python file. How do I feed each test its own instructions and expected values?</div>
+    </div>
+    <div class="answer-block">
+      <div class="a-label">ANSWER</div>
+      <div class="answer-body">
+
+        <p>The key architectural shift is: right now your instruction memory is <strong>hardcoded</strong> in <code>instruction_mem.v</code>. For regression tests to work, the memory must be <strong>loadable from a file at runtime</strong> so each test can inject its own program. Everything else follows from that.</p>
+
+        <p class="qa-section-title">Full directory structure</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">shell</span></div>
+          <pre>tests/
+  add_test/
+    program.hex           <span class="c">← you write this (raw hex instructions)</span>
+    expected_regs.hex     <span class="c">← auto-generated by golden_model.py</span>
+    expected_mem.hex      <span class="c">← auto-generated</span>
+    expected_pc.hex       <span class="c">← auto-generated</span>
+  sub_test/
+    program.hex
+  branch_test/
+    program.hex
+  ...
+
+src/
+  instruction_mem.v       <span class="c">← modify once to use $readmemh</span>
+
+tb/
+  svt_tb.v               <span class="c">← uses +plusarg to know which test to run</span>
+
+golden_model.py           <span class="c">← takes test dir as argument</span>
+Makefile                  <span class="c">← new regression target</span></pre>
+        </div>
+
+        <p class="qa-section-title">Step 1 — Modify instruction_mem.v to load from file</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Verilog</span></div>
+          <pre><span class="kw">module</span> instruction_memory #(
+    <span class="kw">parameter</span> MEM_FILE = <span class="s">"tests/add_test/program.hex"</span>
+)(
+    <span class="kw">input</span>  [<span class="n">31</span>:<span class="n">0</span>] addr,
+    <span class="kw">output</span> [<span class="n">31</span>:<span class="n">0</span>] instr
+);
+    <span class="kw">reg</span> [<span class="n">31</span>:<span class="n">0</span>] mem [<span class="n">0</span>:<span class="n">255</span>];
+
+    <span class="kw">initial begin</span>
+        $readmemh(MEM_FILE, mem);
+    <span class="kw">end</span>
+
+    <span class="kw">assign</span> instr = mem[addr >> <span class="n">2</span>];
+<span class="kw">endmodule</span></pre>
+        </div>
+
+        <p class="qa-section-title">Step 2 — Write each test as a program.hex</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">tests/add_test/program.hex</span></div>
+          <pre><span class="c"># addi x1, x0, 5</span>
+00500093
+<span class="c"># addi x2, x0, 3</span>
+00300113
+<span class="c"># add  x3, x1, x2</span>
+002081b3
+<span class="c"># sw x3, 0(x0) — write result to mem[0]</span>
+00302023</pre>
+        </div>
+
+        <p class="qa-section-title">Step 3 — Run golden_model.py per test</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Shell</span></div>
+          <pre>python3 golden_model.py tests/add_test
+python3 golden_model.py tests/branch_test
+<span class="c"># generates expected_regs.hex, expected_mem.hex, expected_pc.hex in each dir</span></pre>
+        </div>
+
+        <p class="qa-section-title">Step 4 — Testbench uses +plusargs to select test</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Verilog — tb/svt_tb.v</span></div>
+          <pre><span class="kw">initial begin</span>
+    <span class="c">// Get test name: +TEST=add_test</span>
+    <span class="kw">if</span> (!$value$plusargs(<span class="s">"TEST=%s"</span>, test_name))
+        test_name = <span class="s">"add_test"</span>;
+
+    $sformat(regs_file, <span class="s">"tests/%0s/expected_regs.hex"</span>, test_name);
+    $readmemh(regs_file, expected_regs);
+    $readmemh(prog_file, dut.imem.mem); <span class="c">// inject program into DUT</span>
+
+    rst_n = <span class="n">0</span>; repeat(<span class="n">4</span>) @(posedge clk); rst_n = <span class="n">1</span>;
+    <span class="n">#2000</span>;
+
+    <span class="c">// compare all 32 regs, PC, data memory ...</span>
+    <span class="kw">if</span> (mismatches == <span class="n">0</span>)
+        $display(<span class="s">"[SVT PASS] %0s"</span>, test_name);
+    <span class="kw">else</span>
+        $display(<span class="s">"[SVT FAIL] %0s  (%0d mismatches)"</span>, test_name, mismatches);
+<span class="kw">end</span></pre>
+        </div>
+
+        <p class="qa-section-title">Step 5 — Makefile regression target</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">Makefile</span></div>
+          <pre>TESTS = add_test sub_test and_test branch_test jal_test lw_sw_test
+
+regression: svt_sim golden
+	@echo <span class="s">"=============================="</span>
+	@echo <span class="s">"   RV32I Regression Suite     "</span>
+	@echo <span class="s">"=============================="</span>
+	@for t <span class="kw">in</span> $(TESTS); do \
+	    ./svt_sim +TEST=$$t <span class="n">2</span>&gt;&amp;<span class="n">1</span> | grep -E <span class="s">"SVT|MISMATCH"</span>; \
+	done
+	@echo <span class="s">"=============================="</span>
+
+golden:
+	@for t <span class="kw">in</span> $(TESTS); do \
+	    python3 golden_model.py tests/$$t; \
+	done
+
+<span class="c"># Run a single test during development</span>
+test_%: svt_sim
+	python3 golden_model.py tests/$*
+	./svt_sim +TEST=$*</pre>
+        </div>
+
+        <p class="qa-section-title">What make regression produces</p>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-lang">terminal output</span></div>
+          <pre>==============================
+   RV32I Regression Suite
+==============================
+[SVT PASS] add_test
+[SVT PASS] sub_test
+[SVT PASS] and_test
+[SVT FAIL] branch_test  (2 mismatches)
+[MISMATCH] branch_test: PC expected=00400024 actual=00400020
+[SVT PASS] jal_test
+[SVT FAIL] lw_sw_test  (1 mismatches)
+[MISMATCH] lw_sw_test: MEM[0] expected=0000000f actual=00000000
+==============================</pre>
+        </div>
+
+        <div class="callout callout-key">
+          <span class="callout-icon">◆</span>
+          <div class="callout-body"><strong>The golden model auto-runs before the sim every time.</strong> So when you fix RTL and re-run, you never manually recalculate expected values — just fix the bug and <code>make regression</code>.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══════════════════════════════════════════════════════ FOOTER -->
+<footer>
+  <div class="site-footer">
+    <span class="footer-text">RV32I Multi-Cycle · Design Q&amp;A Reference</span>
+    <span class="footer-tag">github.com/Sairam-Kesanapalli/RV32I_Multi_Cycle</span>
+  </div>
+</footer>
+
+</body>
+</html>

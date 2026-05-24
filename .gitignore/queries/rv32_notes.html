@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RV32IM Study Notes — Sairam</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Syne:wght@400;600;800&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #13161e;
+    --surface2:  #1a1e2a;
+    --border:    #252a38;
+    --accent:    #5b8dee;
+    --accent2:   #e85d75;
+    --accent3:   #4ecb8d;
+    --accent4:   #f0a04b;
+    --text:      #d4d8e8;
+    --text-dim:  #6b7394;
+    --text-head: #eef0f8;
+    --code-bg:   #0a0c10;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lora', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.8;
+    min-height: 100vh;
+  }
+
+  /* ── NOISE TEXTURE ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.4;
+  }
+
+  /* ── LAYOUT ── */
+  .shell {
+    position: relative; z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 28px 80px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 70px 0 50px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 60px;
+  }
+  .hero-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .hero-label::after {
+    content: '';
+    flex: 1; max-width: 60px;
+    height: 1px; background: var(--accent);
+    opacity: 0.4;
+  }
+  .hero h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    color: var(--text-head);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex; flex-wrap: wrap; gap: 20px;
+  }
+  .hero-sub span { display: flex; align-items: center; gap: 6px; }
+  .hero-sub span::before { content: '▸'; color: var(--accent3); font-size: 10px; }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 24px 28px;
+    margin-bottom: 64px;
+  }
+  .toc-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .toc li { counter-increment: toc; display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent4);
+    flex-shrink: 0;
+  }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-family: 'Lora', serif;
+    font-size: 14.5px;
+    transition: color 0.2s;
+  }
+  .toc a:hover { color: var(--accent); }
+
+  /* ── QUESTION CARD ── */
+  .qblock {
+    margin-bottom: 64px;
+    scroll-margin-top: 30px;
+  }
+
+  .q-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .q-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent4);
+    background: rgba(240,160,75,0.08);
+    border: 1px solid rgba(240,160,75,0.2);
+    border-radius: 4px;
+    padding: 4px 10px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .q-text {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-head);
+    line-height: 1.4;
+  }
+
+  .answer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .answer::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: linear-gradient(to bottom, var(--accent), var(--accent2));
+    border-radius: 3px 0 0 3px;
+  }
+
+  /* ── TYPOGRAPHY INSIDE ANSWER ── */
+  .answer h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 28px 0 10px;
+    letter-spacing: 0.02em;
+  }
+  .answer h2:first-child { margin-top: 0; }
+
+  .answer h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--accent3);
+    margin: 22px 0 8px;
+    letter-spacing: 0.05em;
+  }
+
+  .answer p { margin-bottom: 14px; }
+  .answer p:last-child { margin-bottom: 0; }
+
+  .answer ul, .answer ol {
+    padding-left: 24px;
+    margin-bottom: 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .answer li::marker { color: var(--accent); }
+
+  /* ── CODE ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 22px;
+    overflow-x: auto;
+    margin: 16px 0;
+    position: relative;
+  }
+  pre::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 8px; right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c9d1f0;
+  }
+  p code, li code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    color: var(--accent3);
+  }
+
+  /* ── CALLOUT ── */
+  .callout {
+    background: rgba(91,141,238,0.06);
+    border: 1px solid rgba(91,141,238,0.2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-style: italic;
+    color: var(--text);
+  }
+  .callout.warn {
+    background: rgba(232,93,117,0.06);
+    border-color: rgba(232,93,117,0.2);
+    border-left-color: var(--accent2);
+  }
+  .callout.ok {
+    background: rgba(78,203,141,0.06);
+    border-color: rgba(78,203,141,0.2);
+    border-left-color: var(--accent3);
+  }
+
+  /* ── TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 64px 0;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding-top: 30px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  footer span { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-label">RV32IM Study Notes</div>
+    <h1>Conceptual <span>Q&amp;A</span><br>from the Learning Session</h1>
+    <div class="hero-sub">
+      <span>RISC-V M-Extension</span>
+      <span>Mul/Div Unit</span>
+      <span>ISA Theory</span>
+      <span>Intel Microarchitecture</span>
+    </div>
+  </header>
+
+  <!-- TOC -->
+  <nav class="toc">
+    <div class="toc-title">// Table of Contents</div>
+    <ol>
+      <li><a href="#q1">Explanation of the combinational mul_div module</a></li>
+      <li><a href="#q2">How does start go to 0 automatically, and why does the DONE state exist?</a></li>
+      <li><a href="#q3">What is the point of ALUOut ← 0 + U_imm for LUI?</a></li>
+      <li><a href="#q4">Is using funct3 directly as md_op an optimization?</a></li>
+      <li><a href="#q5">What is the accumulator register?</a></li>
+      <li><a href="#q6">What is the trial_sub wire and why is it unused?</a></li>
+      <li><a href="#q7">Why is the multiplicand added to the upper half of the accumulator?</a></li>
+      <li><a href="#q8">Do we need an else "continue" in S_MUL_ITER?</a></li>
+      <li><a href="#q9">Why not use a while loop for the multiply/divide logic?</a></li>
+      <li><a href="#q10">Where is accumulator[31:0] = Q ever defined?</a></li>
+      <li><a href="#q11">Why is the upper 32 bits explicitly selected for MULH, MULHSU, MULHU?</a></li>
+      <li><a href="#q12">What is an ISA?</a></li>
+      <li><a href="#q13">How does Intel execute ADD in 1 cycle? Can I study their architecture? Will they hire me for knowing RISC-V?</a></li>
+      <li><a href="#q14">Detailed explanation of S_DIV_ITER — restoring division</a></li>
+      <li><a href="#q15">Where and how to start learning Intel microarchitecture?</a></li>
+    </ol>
+  </nav>
+
+  <!-- Q1 -->
+  <section class="qblock" id="q1">
+    <div class="q-header">
+      <span class="q-number">Q 01</span>
+      <div class="q-text">Explain the original combinational mul_div module — what does each part do?</div>
+    </div>
+    <div class="answer">
+      <h2>Interface</h2>
+      <p><code>start</code> is pulsed by the CPU to begin an operation. <code>md_op</code> is the 3-bit funct3 field from the instruction that selects which of the 8 operations to perform. <code>A</code> and <code>B</code> are the operands (rs1, rs2). <code>Result</code> is the 32-bit output — always the lower or upper half depending on the operation. <code>busy</code> and <code>done</code> are handshake signals back to the pipeline.</p>
+
+      <h2>Operations — matching RISC-V spec funct3 encoding</h2>
+      <table>
+        <tr><th>Op</th><th>funct3</th><th>Description</th></tr>
+        <tr><td><code>MUL</code></td><td>000</td><td>Lower 32 bits of signed×signed</td></tr>
+        <tr><td><code>MULH</code></td><td>001</td><td>Upper 32 bits of signed×signed</td></tr>
+        <tr><td><code>MULHSU</code></td><td>010</td><td>Upper 32 bits of signed×unsigned</td></tr>
+        <tr><td><code>MULHU</code></td><td>011</td><td>Upper 32 bits of unsigned×unsigned</td></tr>
+        <tr><td><code>DIV</code></td><td>100</td><td>Signed division</td></tr>
+        <tr><td><code>DIVU</code></td><td>101</td><td>Unsigned division</td></tr>
+        <tr><td><code>REM</code></td><td>110</td><td>Signed remainder</td></tr>
+        <tr><td><code>REMU</code></td><td>111</td><td>Unsigned remainder</td></tr>
+      </table>
+
+      <h2>State Machine — IDLE → CALC → DONE → IDLE</h2>
+      <ul>
+        <li><strong>IDLE:</strong> Waits for <code>start</code>. Asserts <code>busy</code> and moves to CALC.</li>
+        <li><strong>CALC:</strong> Does the computation in a single cycle, asserts <code>done</code>, moves to DONE.</li>
+        <li><strong>DONE:</strong> Holds until <code>start</code> deasserts (CPU acknowledged), then returns to IDLE.</li>
+      </ul>
+      <p>This gives a 3-cycle latency for every operation regardless of actual complexity — a simplification that works for in-order pipelines where the CPU stalls on <code>busy</code>.</p>
+
+      <h2>Corner Cases Handled (per RISC-V spec)</h2>
+      <ul>
+        <li><strong>Divide by zero:</strong> DIV/DIVU → all-ones result; REM/REMU → returns dividend unchanged.</li>
+        <li><strong>Signed overflow (INT_MIN / -1):</strong> DIV → returns dividend; REM → returns 0.</li>
+      </ul>
+
+      <h2>Issues Worth Noting</h2>
+      <ul>
+        <li>Variable declarations inside <code>always</code> blocks (e.g., <code>reg signed [...] res_mulh</code>) are SystemVerilog-only — some tools may not support it inside procedural blocks.</li>
+        <li><code>signed_A</code>/<code>signed_B</code> are declared 64-bit wide but assigned from 32-bit inputs — the width is misleading.</li>
+        <li>Single-cycle compute works in simulation but synthesis creates a massive combinational path.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Q2 -->
+  <section class="qblock" id="q2">
+    <div class="q-header">
+      <span class="q-number">Q 02</span>
+      <div class="q-text">How does start go to 0 automatically? If done becomes 1 in CALC state itself, how does the DONE state even run?</div>
+    </div>
+    <div class="answer">
+      <h2>Who deasserts start?</h2>
+      <p><code>start</code> is driven by the <strong>control unit</strong> (your pipeline's execute stage or hazard unit), not by this module. The control unit asserts <code>start=1</code> when it issues the operation and holds it high while waiting. When it sees <code>done=1</code>, it moves on and stops driving <code>start</code> high. The mul_div module does not control <code>start</code> at all.</p>
+
+      <h2>Cycle-by-cycle flow</h2>
+<pre data-lang="timeline">Cycle 1: state=IDLE,  start=1  → latches to CALC, busy=1
+Cycle 2: state=CALC           → computes Result, done=1, latches to DONE
+                                 control unit SEES done=1, deasserts start
+Cycle 3: state=DONE,  start=0 → immediately latches back to IDLE, done=0</pre>
+      <p>So yes — by the time the FSM <em>enters</em> DONE state, <code>start</code> is already 0 because the control unit reacted to <code>done=1</code> in the previous cycle. The DONE state does run, but for exactly one cycle, and immediately returns to IDLE.</p>
+
+      <h2>So why does DONE state exist?</h2>
+      <ul>
+        <li><strong>Clean done deassertion:</strong> <code>done</code> is a registered signal. Without DONE state, going CALC→IDLE directly works, but DONE makes it explicit and controlled.</li>
+        <li><strong>Safety net:</strong> If the control unit is slow to deassert <code>start</code> (takes an extra cycle), the FSM parks in DONE and waits rather than incorrectly re-triggering a new computation.</li>
+      </ul>
+
+      <h2>The implicit contract</h2>
+<pre data-lang="handshake">Control unit              mul_div FSM
+-----------               -----------
+assert start=1     →      IDLE sees start, goes to CALC
+wait on busy/done  ←      CALC asserts done=1
+deassert start=0   →      DONE sees !start, returns to IDLE</pre>
+      <div class="callout ok">Both sides must honor this handshake. If your control unit deasserts start the same cycle it sees done, everything works in 3 cycles total.</div>
+    </div>
+  </section>
+
+  <!-- Q3 -->
+  <section class="qblock" id="q3">
+    <div class="q-header">
+      <span class="q-number">Q 03</span>
+      <div class="q-text">What is the point of ALUOut ← 0 + U_imm for LUI? Can't we directly store the immediate?</div>
+    </div>
+    <div class="answer">
+      <h2>You're right — it's purely a hardware reuse trick</h2>
+      <p>There is no architectural reason. The ALU is the <strong>only path</strong> that leads to the result register (ALUOut → Reg[rd]). There is no separate bypass wire from the immediate generator directly to the writeback stage.</p>
+
+      <p>So the datapath is forced to be:</p>
+<pre data-lang="datapath">imm_gen → [ALU input B]
+               ↓
+         ALU (0 + imm)
+               ↓
+            ALUOut
+               ↓
+            Reg[rd]</pre>
+
+      <h2>What it would take to skip the ALU</h2>
+      <p>You'd need a dedicated mux at writeback:</p>
+<pre data-lang="verilog">// Extra mux needed
+Reg[rd] ← (is_lui) ? U_imm : ALUOut;</pre>
+      <p>That adds hardware just for one instruction. Instead, feeding <code>0</code> into ALU input A costs nothing — you already have a <code>0</code> source available on ALUSrcA (the <code>2'b10</code> case in your control unit), and the ADD result is just <code>imm</code> itself.</p>
+
+      <div class="callout"><strong>Short answer:</strong> The ALU is the only road to Reg[rd]. Adding 0 is just the toll you pay to use that road.</div>
+    </div>
+  </section>
+
+  <!-- Q4 -->
+  <section class="qblock" id="q4">
+    <div class="q-header">
+      <span class="q-number">Q 04</span>
+      <div class="q-text">Instead of creating md_op using funct3, is using funct3 directly an optimization?</div>
+    </div>
+    <div class="answer">
+      <h2>Yes, exactly</h2>
+      <p>The M-extension <code>funct3</code> encoding is already:</p>
+<pre data-lang="encoding">000 = MUL
+001 = MULH
+010 = MULHSU
+011 = MULHU
+100 = DIV
+101 = DIVU
+110 = REM
+111 = REMU</pre>
+      <p>So you just wire <code>IR[14:12]</code> directly to <code>md_op</code>. No translation logic needed. The localparams in the module simply give readable names to what are already the correct bit patterns from the instruction encoding.</p>
+      <p>If the encodings were different from the funct3 values, you would need a decoder in between that maps one encoding to another. Here, the ISA designers made them match perfectly so that wiring is sufficient.</p>
+    </div>
+  </section>
+
+  <!-- Q5 -->
+  <section class="qblock" id="q5">
+    <div class="q-header">
+      <span class="q-number">Q 05</span>
+      <div class="q-text">What is the accumulator?</div>
+    </div>
+    <div class="answer">
+      <h2>Connecting to the textbook diagram</h2>
+      <p>In the shift-and-add algorithm from your YouTube video, the columns were:</p>
+<pre data-lang="textbook">M    C    A       Q        Q0
+1011      0000    1101     (0) ← initialization
+           ↑       ↑
+    upper half   lower half (multiplier)</pre>
+      <ul>
+        <li><strong>M</strong> = multiplicand (1011 = 11)</li>
+        <li><strong>Q</strong> = multiplier (1101 = 13), also becomes lower half of product</li>
+        <li><strong>A</strong> = upper register, starts at 0000, accumulates partial products</li>
+        <li><strong>C</strong> = carry bit</li>
+      </ul>
+
+      <p>In the textbook, <code>A</code> and <code>Q</code> together form a 64-bit shift register holding the growing product. That pair <code>{A, Q}</code> is exactly what the code calls <code>accumulator</code>:</p>
+<pre data-lang="mapping">accumulator[63:32]  =  A  (upper half — partial product)
+accumulator[31:0]   =  Q  (lower half — in textbook, starts as multiplier)</pre>
+
+      <h2>Each cycle</h2>
+      <ul>
+        <li>If Q's LSB (i.e., <code>mplier[0]</code>) = 1: add M to upper half (A = A + M)</li>
+        <li>Shift the whole <code>{C, A, Q}</code> right by 1</li>
+      </ul>
+      <p>After 32 shifts, the full 64-bit product is in <code>{A, Q}</code> = <code>accumulator</code>.</p>
+    </div>
+  </section>
+
+  <!-- Q6 -->
+  <section class="qblock" id="q6">
+    <div class="q-header">
+      <span class="q-number">Q 06</span>
+      <div class="q-text">The trial_sub wire — what is it, and why isn't it used?</div>
+    </div>
+    <div class="answer">
+      <h2>What it does</h2>
+<pre data-lang="verilog">wire [WIDTH:0] trial_sub = {remainder[WIDTH-1:0], 1'b0} - {1'b0, divisor_reg};</pre>
+      <p>This wire shifts <code>remainder</code> left by 1 (the <code>1'b0</code> appended at the LSB) and subtracts divisor. It is a combinational preview of "what would happen if I shifted remainder and subtracted."</p>
+
+      <h2>Why it is wrong and unused</h2>
+      <div class="callout warn">Notice it appends <code>1'b0</code> at the LSB. But correct restoring division must shift remainder left and pull in <code>quotient[WIDTH-1]</code> — the MSB of the dividend register — not a hardcoded zero.</div>
+
+      <p>That's why <code>S_DIV_ITER</code> ignores this wire entirely and recomputes correctly inline:</p>
+<pre data-lang="verilog">// Correct — pulls in quotient's MSB (next dividend bit)
+shifted_rem = {remainder[WIDTH-1:0], quotient[WIDTH-1]};
+
+// Wire above was wrong — it always shifts in 0
+wire trial_sub = {remainder[WIDTH-1:0], 1'b0} - ...  ← WRONG</pre>
+      <p>The <code>trial_sub</code> wire is a leftover mistake from an earlier design iteration. It synthesizes as dead logic and does nothing.</p>
+    </div>
+  </section>
+
+  <!-- Q7 -->
+  <section class="qblock" id="q7">
+    <div class="q-header">
+      <span class="q-number">Q 07</span>
+      <div class="q-text">Why is the multiplicand added to the upper half of the accumulator? Why not lower or full?</div>
+    </div>
+    <div class="answer">
+      <h2>Tracing the textbook example</h2>
+<pre data-lang="example">M = 1011 (11),  Q = 1101 (13)
+Init:    A=0000  Q=1101
+
+Cycle 1: Q[0]=1 → A = A + M = 0000 + 1011 = 1011
+         Shift right: {A,Q} = {1011,1101} >> 1 = {0101,1110}
+
+Cycle 2: Q[0]=0 → no add
+         Shift right: {0101,1110} >> 1 = {0010,1111}
+
+Cycle 3: Q[0]=1 → A = 0010 + 1011 = 1101
+         Shift right...
+</pre>
+
+      <h2>The positional value argument</h2>
+      <p>Each bit of the multiplier Q represents a power of 2. When <code>Q[0]=1</code> at iteration <code>i</code>, the multiplicand needs to be added at position <code>2^i</code>. Since we right-shift every cycle, the upper half naturally represents the higher-order bits. Adding M to the upper half and then right-shifting is equivalent to adding <code>M × 2^(current_bit_position)</code>.</p>
+
+      <p>In code:</p>
+<pre data-lang="verilog">accumulator <= ({accumulator[63:32] + mcand,   // upper half + M
+                  accumulator[31:0]             // lower half unchanged
+                }) >> 1;                        // then shift whole thing right</pre>
+
+      <div class="callout">Adding to the lower half would scale the multiplicand by the wrong power of 2. Adding to the full 64-bit value would double-count the partial products already accumulated in the lower half.</div>
+    </div>
+  </section>
+
+  <!-- Q8 -->
+  <section class="qblock" id="q8">
+    <div class="q-header">
+      <span class="q-number">Q 08</span>
+      <div class="q-text">In S_MUL_ITER, do we need to write an else statement saying "continue"?</div>
+    </div>
+    <div class="answer">
+      <h2>No — hardware has no concept of "continue"</h2>
+<pre data-lang="verilog">if (count == WIDTH - 1)
+    state <= S_FINISH;
+// No else needed — if this condition is false,
+// the state register is never written,
+// so it retains its current value = S_MUL_ITER automatically</pre>
+
+      <p>In an FPGA or ASIC, <strong>registers hold their value until explicitly written</strong>. Not writing = staying. The FSM loops on itself implicitly.</p>
+
+      <p>This is a fundamental difference from software:</p>
+      <table>
+        <tr><th>Software</th><th>Hardware (RTL)</th></tr>
+        <tr><td>Execution pointer moves forward; you must explicitly <code>continue</code> or loop</td><td>Every register keeps its value every cycle unless overwritten; "staying" is the default</td></tr>
+        <tr><td>Sequential — one thing at a time</td><td>Parallel — all always blocks evaluate simultaneously every clock edge</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- Q9 -->
+  <section class="qblock" id="q9">
+    <div class="q-header">
+      <span class="q-number">Q 09</span>
+      <div class="q-text">What if we use a while loop in the multiplier or division logic until count reaches WIDTH-1?</div>
+    </div>
+    <div class="answer">
+      <h2>This is the most important conceptual difference between software and hardware</h2>
+
+      <h3>In software</h3>
+<pre data-lang="c">while (count < 32) {
+    // runs 32 times — sequential, fast
+    count++;
+}</pre>
+      <p>All 32 iterations happen within one logical thread, one after another, in microseconds.</p>
+
+      <h3>In hardware, a loop = unrolling</h3>
+      <p>A <code>while</code> or <code>for</code> loop in synthesizable RTL means the synthesizer <strong>unrolls it completely</strong> into combinational logic:</p>
+<pre data-lang="synthesis">// for (i=0; i<32; i++) becomes physically:
+// 32 adders + 32 shifters all chained in series
+// ALL evaluated in ONE clock cycle
+// Critical path = 32× delay of one stage
+// → Timing fails — too slow for any reasonable clock</pre>
+
+      <h3>The iterative FSM approach</h3>
+      <p>Does <strong>one step per clock cycle</strong>:</p>
+<pre data-lang="timeline">Cycle 1:  one add + one shift
+Cycle 2:  one add + one shift
+...
+Cycle 32: one add + one shift</pre>
+      <p>This keeps the combinational path short (just one adder + one shifter), allowing a fast clock. You trade <strong>latency</strong> (32 cycles) for <strong>timing closure</strong> (fast clock).</p>
+
+      <div class="callout ok">This is called a <strong>multi-cycle iterative datapath</strong> and is standard practice for multiply/divide units in real CPUs — including Intel, ARM, and RISC-V cores.</div>
+    </div>
+  </section>
+
+  <!-- Q10 -->
+  <section class="qblock" id="q10">
+    <div class="q-header">
+      <span class="q-number">Q 10</span>
+      <div class="q-text">Where is accumulator[31:0] = Q ever defined? The textbook loads the multiplier into Q.</div>
+    </div>
+    <div class="answer">
+      <h2>It's never set to Q — that's the key difference from the textbook</h2>
+
+      <p>In S_IDLE initialization:</p>
+<pre data-lang="verilog">MUL: begin
+    accumulator <= {WIDTH*2{1'b0}};  // entire 64 bits = ZERO
+    mcand       <= A;
+    mplier      <= B;                // B stored SEPARATELY, NOT in accumulator
+    state       <= S_MUL_ITER;
+end</pre>
+
+      <h2>Textbook vs this code</h2>
+      <table>
+        <tr><th></th><th>Textbook</th><th>This Code</th></tr>
+        <tr><td>Multiplier</td><td>Loaded into Q (lower half of accumulator)</td><td>Stored in separate <code>mplier</code> register</td></tr>
+        <tr><td>Accumulator</td><td>{A, Q} — unified 64-bit register</td><td>Product only, starts at zero</td></tr>
+        <tr><td>Shift</td><td>One right-shift on {C, A, Q}</td><td>Accumulator shifts right; mplier shifts right independently</td></tr>
+      </table>
+
+      <h2>Why does it still produce the correct result?</h2>
+      <p>Both approaches are mathematically equivalent. Each cycle, <code>mplier[0]</code> gives the current multiplier bit (same as Q[0] in the textbook). After 32 right-shifts, the partial products pushed down from the top naturally fill <code>accumulator[31:0]</code> — not because Q was loaded there initially, but because 32 right-shifts pushed the partial products down into the lower half.</p>
+    </div>
+  </section>
+
+  <!-- Q11 -->
+  <section class="qblock" id="q11">
+    <div class="q-header">
+      <span class="q-number">Q 11</span>
+      <div class="q-text">Why is the upper 32 bits explicitly selected for MULH, MULHSU, MULHU? Why not lower or full?</div>
+    </div>
+    <div class="answer">
+      <h2>Because of what the instruction is defined to return</h2>
+      <p>32-bit × 32-bit = 64-bit result. Example:</p>
+<pre data-lang="example">0xFFFFFFFF × 0xFFFFFFFF
+= 0xFFFFFFFE_00000001   (64 bits)
+         ↑upper↑  ↑lower↑</pre>
+
+      <p>The 64-bit result <strong>never fits in a 32-bit register</strong>. RISC-V splits it across two instructions:</p>
+<pre data-lang="riscv">MUL    rd, rs1, rs2  →  rd = lower 32 bits  (bits 31:0)
+MULH   rd, rs1, rs2  →  rd = upper 32 bits  (bits 63:32)</pre>
+      <p>If you want the full 64-bit product you run <strong>both</strong> instructions and combine <code>{MULH_result, MUL_result}</code>.</p>
+
+      <h2>Why does the upper half matter?</h2>
+      <ul>
+        <li><strong>Fixed-point multiplication</strong> (Q31 format in DSP) — the useful precision is in the upper half</li>
+        <li><strong>Overflow detection</strong> — if upper half is nonzero, the result exceeded 32 bits</li>
+        <li><strong>Software 64-bit multiply on 32-bit hardware</strong></li>
+      </ul>
+<pre data-lang="asm"># Overflow check in assembly
+mul   t0, a0, a1    # lower half
+mulh  t1, a0, a1    # upper half
+bnez  t1, overflow  # if upper != 0, result overflowed 32 bits</pre>
+
+      <h2>Why not full 64 bits directly?</h2>
+      <p>RISC-V is a 32-bit ISA — every register is 32 bits wide. There is no 64-bit register in RV32. The architecture physically cannot return 64 bits in one instruction, hence the split into MUL + MULH.</p>
+
+      <div class="callout"><code>is_upper</code> in the code is set to 1 only for MULH, MULHSU, MULHU — exactly the instructions whose job is to return the upper half.</div>
+    </div>
+  </section>
+
+  <!-- Q12 -->
+  <section class="qblock" id="q12">
+    <div class="q-header">
+      <span class="q-number">Q 12</span>
+      <div class="q-text">What do you define as an ISA?</div>
+    </div>
+    <div class="answer">
+      <h2>ISA — Instruction Set Architecture</h2>
+      <p>It is the <strong>contract between software and hardware</strong>.</p>
+
+      <h2>What it defines</h2>
+      <ul>
+        <li><strong>What instructions exist</strong> — ADD, SUB, LOAD, BRANCH, etc.</li>
+        <li><strong>What registers exist</strong> — how many, how wide (32 registers × 32 bits in RV32)</li>
+        <li><strong>How instructions are encoded</strong> — which bits mean what (opcode, funct3, funct7...)</li>
+        <li><strong>What memory model is used</strong> — how loads/stores behave</li>
+        <li><strong>How exceptions/interrupts work</strong> — what happens on a fault</li>
+      </ul>
+
+      <h2>What it does NOT define</h2>
+      <ul>
+        <li>How the hardware implements it — pipelined, multi-cycle, superscalar — that's up to the designer</li>
+        <li>How fast it runs</li>
+        <li>How many cycles each instruction takes</li>
+      </ul>
+
+      <h2>Analogy</h2>
+      <div class="callout">ISA = job description ("must be able to do ADD, LOAD, BRANCH...").<br>CPU = the actual employee who does the job.</div>
+
+      <p>Two completely different CPUs — your simple multi-cycle design and a modern Intel superscalar — can both implement the same ISA. Software compiled for that ISA runs on both, because both honor the same contract.</p>
+<pre data-lang="example">RISC-V ISA says:
+  "ADD rd, rs1, rs2 must store rs1+rs2 into rd"
+
+Your CPU:  does it in EXEC_R state, 4 cycles total
+Intel CPU: does it in 1 cycle with deep pipelining
+ARM CPU:   does it with a different internal pipeline
+
+All three are correct implementations — the OUTPUT is what the ISA
+specifies, not the internal method.</pre>
+    </div>
+  </section>
+
+  <!-- Q13 -->
+  <section class="qblock" id="q13">
+    <div class="q-header">
+      <span class="q-number">Q 13</span>
+      <div class="q-text">How does Intel do ADD in 1 cycle? If ARM and Intel are not open source, how can someone like me study their architecture? Will Intel be happy or angry to hire me since I focused on their "opponent" RISC-V?</div>
+    </div>
+    <div class="answer">
+      <h2>1. How does Intel do ADD in 1 cycle?</h2>
+      <p>It doesn't violate anything. "1 cycle" means their pipeline <em>stage</em> is very short and they throw enormous hardware at it. A few techniques:</p>
+
+      <ul>
+        <li><strong>Deep pipelining:</strong> Intel splits execution into 15-20+ pipeline stages. Each stage does very little, so the clock can run at 5GHz. Your multi-cycle CPU has ~4 stages at maybe 50MHz. Same work, different granularity.</li>
+        <li><strong>Multiple execution units:</strong> Modern Intel CPUs have 4-6 integer ALUs running in parallel. They can execute 4 ADDs simultaneously in one cycle.</li>
+        <li><strong>Out-of-order execution:</strong> The CPU looks ahead 200-300 instructions, finds ones with no dependencies, and runs them in parallel even if they are not sequential in your program.</li>
+        <li><strong>Micro-op translation:</strong> Modern Intel CPUs internally translate x86 instructions into micro-ops — simpler internal instructions resembling RISC. So at the deepest level, Intel is already running a RISC-like engine internally.</li>
+      </ul>
+
+      <h2>2. How to study Intel/ARM without open source</h2>
+      <p>They publish far more than you'd think:</p>
+      <ul>
+        <li><strong>Official optimization manuals:</strong> Intel publishes full optimization manuals — thousands of pages, free at intel.com. Exact latency and throughput for every instruction.</li>
+        <li><strong>ARM Architecture Reference Manuals:</strong> Full ISA spec, memory model, exception model — free at arm.com.</li>
+        <li><strong>Agner Fog's manuals:</strong> A Danish professor who reverse-engineered Intel/AMD microarchitecture through careful benchmarking. Widely used in industry. Free at agner.org.</li>
+        <li><strong>Academic papers:</strong> Intel and ARM engineers publish at ISCA, MICRO, HPCA. Real implementation details come through these conferences.</li>
+        <li><strong>WikiChip:</strong> Community-maintained microarchitecture documentation with die shots and pipeline diagrams.</li>
+        <li><strong>Patent filings:</strong> Both companies file detailed patents describing their microarchitectural innovations. Publicly searchable.</li>
+      </ul>
+
+      <h2>3. Will Intel care that you studied RISC-V?</h2>
+      <div class="callout ok">They will not care at all — and here is why.</div>
+
+      <p><strong>Microarchitecture concepts are universal.</strong> Pipelining, out-of-order execution, branch prediction, cache hierarchies, hazard detection — these are the same whether you implement them on x86, ARM, or RISC-V. If you deeply understand a RISC-V pipeline, you understand CPU design. The ISA is almost irrelevant to the job.</p>
+
+      <p><strong>RISC-V is actually preferred for learning</strong> precisely because it is clean and unencumbered by 40 years of legacy baggage that x86 carries. Intel engineers themselves will tell you x86 is an ugly ISA to learn on.</p>
+
+      <p><strong>For verification roles specifically</strong> — UVM, SystemVerilog assertions, coverage methodology, formal verification — none of that is ISA-specific. Your BlackParrot verification work is directly transferable.</p>
+
+      <p><strong>The "opponent" framing — forget it entirely.</strong> Intel and ARM are competitors at the product level, not at the engineering knowledge level. RISC-V is an open standard, not a company. Intel Foundry is actively manufacturing RISC-V chips for other companies, and Intel has internal RISC-V research projects.</p>
+
+      <div class="callout">Knowing RISC-V deeply → you understand CPUs → Intel, AMD, ARM, Qualcomm, and Apple all want that.</div>
+    </div>
+  </section>
+
+  <!-- Q14 -->
+  <section class="qblock" id="q14">
+    <div class="q-header">
+      <span class="q-number">Q 14</span>
+      <div class="q-text">Explain S_DIV_ITER in detail — every line of the restoring division algorithm.</div>
+    </div>
+    <div class="answer">
+      <h2>The Algorithm: Restoring Division in Long-Division Terms</h2>
+      <p>Think of how you do long division by hand — you bring down the next digit of the dividend, try subtracting the divisor, keep the result if it fits, otherwise restore and write 0. Hardware does the exact same thing with registers.</p>
+
+      <h2>Register Roles at the Start</h2>
+<pre data-lang="initial state">quotient    = abs_A   ← dividend bits, drains out from MSB side
+remainder   = 0       ← accumulates the running remainder  
+divisor_reg = abs_B   ← fixed throughout the iteration</pre>
+      <div class="callout"><strong>Key insight:</strong> quotient serves a dual purpose. Initially it holds the dividend bits (fed one at a time from MSB). Gradually it fills with quotient bits (inserted from LSB). The two uses share the same register but at opposite ends, passing each other over 32 cycles.</div>
+
+      <h2>Named block declaration</h2>
+<pre data-lang="verilog">begin : div_block
+    reg [WIDTH:0] shifted_rem;
+    reg [WIDTH:0] sub_result;</pre>
+      <p><code>begin : div_block</code> creates a named scope so local variables can be declared inside an <code>always</code> block. These are not real flip-flops — they are temporary wires used only within this combinational calculation. They are 33 bits wide (<code>WIDTH+1</code>) because the extra MSB acts as a sign bit after subtraction.</p>
+
+      <h2>Step 1 — Shift remainder left, pull in next dividend bit</h2>
+<pre data-lang="verilog">shifted_rem = {remainder[WIDTH-1:0], quotient[WIDTH-1]};</pre>
+      <ul>
+        <li><code>remainder[WIDTH-1:0]</code> — drop the 33rd sign bit, take lower 32 bits</li>
+        <li><code>quotient[WIDTH-1]</code> — the MSB of the quotient register, which is the next dividend bit</li>
+        <li>Concatenation shifts remainder left by 1 and brings in the next digit — exactly "bring down the next digit" from long division</li>
+      </ul>
+<pre data-lang="visualization">Before:
+remainder = 0_0000_0000   (33 bits)
+quotient  = 1101_xxxx     (MSB=1 is next dividend bit)
+
+shifted_rem = 0000_0000_1  (remainder shifted left, quotient MSB shifted in)</pre>
+
+      <h2>Step 2 — Trial subtraction</h2>
+<pre data-lang="verilog">sub_result = shifted_rem - {1'b0, divisor_reg};</pre>
+      <p><code>{1'b0, divisor_reg}</code> zero-extends divisor to 33 bits so the sizes match. Then subtract.</p>
+      <p>The 33rd bit (MSB = bit 32) tells you the sign of the result:</p>
+      <ul>
+        <li><code>sub_result[WIDTH] = 0</code> → result ≥ 0 → divisor fits → quotient bit = 1</li>
+        <li><code>sub_result[WIDTH] = 1</code> → result &lt; 0 → divisor does not fit → quotient bit = 0</li>
+      </ul>
+
+      <h2>Step 3a — Subtraction succeeded</h2>
+<pre data-lang="verilog">if (!sub_result[WIDTH]) begin
+    remainder <= sub_result;
+    quotient  <= {quotient[WIDTH-2:0], 1'b1};
+end</pre>
+      <ul>
+        <li><code>remainder ← sub_result</code> — keep the subtracted value (divisor fit)</li>
+        <li><code>quotient ← shift left, insert 1 at LSB</code> — record that this bit of quotient is 1, and consume the MSB dividend bit</li>
+      </ul>
+
+      <h2>Step 3b — Subtraction failed, restore</h2>
+<pre data-lang="verilog">end else begin
+    remainder <= shifted_rem;        // discard sub_result — restore
+    quotient  <= {quotient[WIDTH-2:0], 1'b0};
+end</pre>
+      <ul>
+        <li><code>remainder ← shifted_rem</code> — NOT sub_result — the subtraction is discarded and the remainder is restored to what it was before the attempt</li>
+        <li><code>quotient ← shift left, insert 0</code> — this quotient bit is 0</li>
+      </ul>
+      <p>This is why the algorithm is called <strong>restoring</strong> division — when subtraction fails, you restore.</p>
+
+      <h2>Counter and state transition</h2>
+<pre data-lang="verilog">count <= count + 1;
+if (count == WIDTH - 1)
+    state <= S_FINISH;</pre>
+      <p>After 32 iterations (count 0 to 31), every dividend bit has been consumed from the MSB side, and 32 quotient bits have been inserted from the LSB side. <code>quotient</code> now holds the computed quotient and <code>remainder[WIDTH-1:0]</code> holds the remainder.</p>
+
+      <h2>Worked Example: 13 ÷ 3</h2>
+<pre data-lang="example">quotient (dividend) = 0000_1101  (13)
+divisor_reg         = 0000_0011  (3)
+remainder           = 0_0000_0000
+
+Iter 1: shifted_rem = {0000_0000, 0} = 0_0000_0000  (MSB of dividend = 0)
+        sub         = negative → FAIL (restore)
+        quotient    = 0001_1010  (shifted left, 0 inserted)
+
+Iter 2: shifted_rem = {0000_0000, 0} → FAIL
+        quotient    = 0011_0100
+
+Iter 3: shifted_rem = {0000_0000, 0} → FAIL
+        quotient    = 0110_1000
+
+Iter 4: shifted_rem = {0000_0000, 0} → FAIL
+        quotient    = 1101_0000
+
+... (32 iterations total)
+
+Final:
+quotient  = 0000_0100  (4 = 13/3 ✓)
+remainder = 0000_0001  (1 = 13%3 ✓)</pre>
+    </div>
+  </section>
+
+  <!-- Q15 -->
+  <section class="qblock" id="q15">
+    <div class="q-header">
+      <span class="q-number">Q 15</span>
+      <div class="q-text">I'm very interested in how Intel calculates an instruction within 1 cycle. Where do I start to explore Intel architecture?</div>
+    </div>
+    <div class="answer">
+      <h2>First — Correct the Mental Model</h2>
+      <div class="callout warn">Intel doesn't magically do it in 1 cycle. The correct statement is: your CPU has a 4-cycle latency for ADD across the full pipeline. Intel's ADD has 1-cycle latency within the execute stage, but their full pipeline is 14–19 stages deep. The difference is pipelining + parallelism, not magic.</div>
+
+      <h2>The Learning Ladder</h2>
+
+      <h3>Rung 1 — Pipelining (you're already here)</h3>
+      <p>You already built a multi-cycle CPU. The next step is pipelining, where multiple instructions overlap stages:</p>
+<pre data-lang="comparison">Multi-cycle:   one instruction uses all stages sequentially
+Pipelined:     multiple instructions overlap
+
+Cycle:         1    2    3    4    5    6
+Multi-cycle:  [  instr1 only      ][ instr2...]
+Pipelined:    [F][D][E][W]
+                  [F][D][E][W]
+                     [F][D][E][W]</pre>
+      <p><strong>Read:</strong> Patterson &amp; Hennessy — "Computer Organization and Design RISC-V Edition" Chapters 4–5. The single most important book for where you are now.</p>
+
+      <h3>Rung 2 — Classic 5-stage Pipeline</h3>
+      <p>Build or deeply understand a 5-stage RISC-V pipeline: IF → ID → EX → MEM → WB. Key concepts: data hazards (RAW, WAW, WAR), forwarding/bypassing, control hazards, branch prediction basics. Extend your current CPU into a 5-stage pipeline — you already have the datapath.</p>
+
+      <h3>Rung 3 — Out-of-Order Execution (where Intel lives)</h3>
+      <p>Intel's Core architecture is out-of-order superscalar. Core structures to understand:</p>
+      <ul>
+        <li><strong>ROB</strong> (Reorder Buffer) — tracks all in-flight instructions, retires them in order</li>
+        <li><strong>Reservation Stations</strong> — hold instructions waiting for operands</li>
+        <li><strong>Register Renaming</strong> — eliminates false WAR and WAW dependencies</li>
+        <li><strong>Execution Ports</strong> — Intel has 6 ports, each runs certain operation types</li>
+        <li><strong>Tomasulo's Algorithm</strong> — the foundational algorithm behind all modern OoO processors, invented at IBM in 1967, still used conceptually today</li>
+      </ul>
+      <p><strong>Read:</strong> Patterson &amp; Hennessy Chapter 6 (ILP) + Hennessy &amp; Patterson "Computer Architecture: A Quantitative Approach" Chapter 3.</p>
+
+      <h3>Rung 4 — Intel Specifically</h3>
+      <ul>
+        <li><strong>Intel Optimization Reference Manual</strong> — free at intel.com. Exact latency, throughput, execution port for every instruction.</li>
+        <li><strong>Agner Fog's Microarchitecture Manual</strong> — agner.org/optimize/microarchitecture.pdf. Reverse-engineered Intel/AMD pipeline details. Most detailed unofficial documentation that exists.</li>
+        <li><strong>WikiChip</strong> — en.wikichip.org/wiki/intel. Pipeline diagrams, die shots, cache hierarchies for every Intel generation.</li>
+      </ul>
+
+      <h3>Rung 5 — Academic Papers</h3>
+      <p>Intel engineers publish at ISCA, MICRO, and HPCA every year. Search Google Scholar for "Intel microarchitecture", "Skylake pipeline MICRO", "branch prediction Intel ISCA". Free through ACM/IEEE digital libraries — your college likely has access.</p>
+
+      <h3>Rung 6 — Simulators and Open-Source OoO</h3>
+      <ul>
+        <li><strong>gem5</strong> — industry-standard CPU simulator, configurable OoO cores. gem5.org</li>
+        <li><strong>BOOM (Berkeley Out-of-Order Machine)</strong> — open-source OoO RISC-V core in Chisel. The closest thing to "Intel architecture but open source." Reading this RTL will teach you more than any textbook. github.com/riscv-boom/riscv-boom</li>
+      </ul>
+
+      <h2>Concrete Sequence for You</h2>
+      <table>
+        <tr><th>Timeline</th><th>Goal</th></tr>
+        <tr><td>Week 1–2</td><td>P&amp;H Chapter 4 — build the 5-stage pipeline version of your CPU</td></tr>
+        <tr><td>Week 3–4</td><td>P&amp;H Chapter 5 — cache hierarchy (directly relevant to your D$ testbench work)</td></tr>
+        <tr><td>Month 2</td><td>P&amp;H Ch.6 + H&amp;P Ch.3 — ILP and OoO fundamentals</td></tr>
+        <tr><td>Month 3</td><td>Tomasulo's algorithm — implement a toy OoO in Python first, then RTL</td></tr>
+        <tr><td>Month 4</td><td>Read BOOM source code — see real OoO in RTL</td></tr>
+        <tr><td>Month 5+</td><td>Agner Fog manual + Intel Opt manual — map concepts to real hardware</td></tr>
+      </table>
+
+      <h2>The One Thread That Ties It All Together</h2>
+      <div class="callout ok">Everything Intel does — pipelining, OoO, superscalar — is answering one question: <strong>How do we keep all execution units busy every cycle?</strong> Your current CPU wastes cycles. The entire evolution of CPU microarchitecture from 1980 to today is the story of progressively eliminating those wasted cycles. Follow that thread and you'll naturally arrive at understanding Intel's architecture.</div>
+    </div>
+  </section>
+
+  <footer>
+    <span>RV32IM Study Notes</span>
+    <span>IIIT Dharwad · ECE · VLSI / ASIC Track</span>
+    <span>Generated from learning session</span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RV32IM Pipeline — Study Notes</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0b0e14;
+    --bg2:       #111620;
+    --bg3:       #181e2c;
+    --border:    #1f2a3f;
+    --accent:    #3b82f6;
+    --accent2:   #06b6d4;
+    --accent3:   #f59e0b;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --purple:    #a78bfa;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --code-bg:   #0d1117;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ── noise overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  .wrapper { max-width: 860px; margin: 0 auto; padding: 60px 24px 120px; position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  header { margin-bottom: 64px; }
+  .chip {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    border: 1px solid var(--accent2);
+    padding: 3px 12px;
+    border-radius: 2px;
+    margin-bottom: 20px;
+  }
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #e2e8f0 30%, #3b82f6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 24px 28px;
+    margin-bottom: 56px;
+  }
+  .toc-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  .toc ol { list-style: none; counter-reset: toc; }
+  .toc li { counter-increment: toc; margin-bottom: 6px; display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    min-width: 22px;
+  }
+  .toc a { color: var(--text); text-decoration: none; font-size: 13px; transition: color 0.2s; }
+  .toc a:hover { color: var(--accent2); }
+
+  /* ── Section ── */
+  .section { margin-bottom: 56px; scroll-margin-top: 32px; }
+
+  .q-block {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .q-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 24px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+  }
+  .q-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .q-badge.q  { background: #1e3a5f; color: var(--accent2); }
+  .q-badge.a  { background: #14291a; color: var(--green);   }
+
+  .q-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: #cbd5e1;
+    flex: 1;
+  }
+
+  .a-body { padding: 22px 24px; font-size: 14px; }
+
+  p { margin-bottom: 12px; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ── Code blocks ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.65;
+    overflow-x: auto;
+    margin: 14px 0;
+    color: #cdd9e5;
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: #131a26;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--accent2);
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+  .hl-blue   { color: #79c0ff; }
+  .hl-green  { color: #56d364; }
+  .hl-yellow { color: #e3b341; }
+  .hl-red    { color: #ff7b72; }
+  .hl-purple { color: #d2a8ff; }
+  .hl-muted  { color: #6e7681; font-style: italic; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 14px 0;
+  }
+  th {
+    background: var(--bg3);
+    color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    text-align: left;
+  }
+  td {
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #0e1520; }
+
+  /* ── Callouts ── */
+  .callout {
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    font-size: 13px;
+    border-left: 3px solid;
+  }
+  .callout.blue   { background: #0f1e35; border-color: var(--accent);  color: #93c5fd; }
+  .callout.green  { background: #0a1f14; border-color: var(--green);   color: #6ee7b7; }
+  .callout.yellow { background: #1c1500; border-color: var(--accent3); color: #fcd34d; }
+  .callout.red    { background: #200a0a; border-color: var(--red);     color: #fca5a5; }
+
+  /* ── Section heading ── */
+  .sec-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .sec-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+
+  /* ── inner Q heading ── */
+  .inner-h {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent3);
+    margin: 18px 0 8px;
+  }
+
+  /* ── Pipeline diagram ── */
+  .pipe-row {
+    display: grid;
+    grid-template-columns: 160px repeat(7, 1fr);
+    gap: 3px;
+    margin: 10px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .pipe-cell {
+    padding: 5px 4px;
+    text-align: center;
+    border-radius: 3px;
+    border: 1px solid transparent;
+  }
+  .pipe-label { color: var(--muted); text-align: right; padding-right: 10px; display: flex; align-items: center; justify-content: flex-end; font-size: 11px; }
+  .p-if  { background: #1a3a5c; color: #7ec8e3; border-color: #2a5a8c; }
+  .p-id  { background: #2d1f5e; color: #b39ddb; border-color: #4d3f8e; }
+  .p-ex  { background: #4a1a1a; color: #ef9a9a; border-color: #7a3a3a; }
+  .p-mem { background: #3a2800; color: #ffcc80; border-color: #6a4800; }
+  .p-wb  { background: #0f3828; color: #80cbc4; border-color: #2f6848; }
+  .p-stl { background: #1a1a1a; color: #666;    border-color: #333; font-style: italic; }
+  .p-nop { background: #111; color: #444; border-color: #222; font-style: italic; }
+  .p-fwd { background: #3a1f00; color: #fb923c; border-color: #7a4f00; }
+  .p-hdr { background: transparent; color: var(--muted); font-size: 10px; }
+  .p-empty { background: transparent; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="chip">ECE · Computer Architecture</div>
+    <h1>RV32IM Pipelined Processor<br>Study Notes</h1>
+    <div class="subtitle">// doubts &amp; explanations from session</div>
+  </header>
+
+  <!-- ══ TOC ══ -->
+  <nav class="toc">
+    <div class="toc-title">Contents</div>
+    <ol>
+      <li><a href="#s1">Restoring Binary Division — the iteration loop</a></li>
+      <li><a href="#s2">Forwarding — what each block does</a></li>
+      <li><a href="#s3">Load-use stall — how does the pipeline resume?</a></li>
+      <li><a href="#s4">Hazard verification — ADD → SUB → AND</a></li>
+      <li><a href="#s5">ALUSrcB_ctrl — why forwarded_read_data2 appears twice</a></li>
+      <li><a href="#s6">Is the cleaner ternary an optimization?</a></li>
+      <li><a href="#s7">Why is the mul/div stall block left empty?</a></li>
+      <li><a href="#s8">All pipeline hazards — are they all fixed?</a></li>
+      <li><a href="#s9">Each hazard explained in detail</a></li>
+      <li><a href="#s10">What is flush and why is it used?</a></li>
+      <li><a href="#s11">In-order vs Out-of-order pipelining</a></li>
+      <li><a href="#s12">load_use_stall — is rs1/rs2 really from the next instruction?</a></li>
+      <li><a href="#s13">Why are flush and stall not applied to EX/MEM and MEM/WB?</a></li>
+    </ol>
+  </nav>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s1">
+    <div class="sec-title"><span class="sec-num">01</span> Restoring Binary Division — the iteration loop</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">I am unable to understand the S_DIV_ITER code block.</span></div>
+      <div class="a-body">
+        <p>This implements <strong>restoring binary long division</strong> — one bit of quotient computed per clock cycle.</p>
+        <div class="inner-h">The big idea</div>
+        <p>The <code>quotient</code> register starts holding the <em>dividend</em>. Its bits are consumed one at a time as new quotient bits are written in from the right over <code>WIDTH</code> cycles.</p>
+        <div class="inner-h">Step 1 — Left shift + pull-in</div>
+        <pre><span class="hl-blue">shifted_rem</span> = {<span class="hl-purple">remainder</span>[WIDTH-1:0], <span class="hl-yellow">quotient</span>[WIDTH-1]};</pre>
+        <p>1-bit left shift of remainder with the MSB of quotient (next dividend bit) shifted in at the bottom. Mirrors "bring down the next digit" in long division.</p>
+        <div class="inner-h">Step 2 — Trial subtraction</div>
+        <pre><span class="hl-blue">sub_result</span> = shifted_rem - {1'b0, <span class="hl-red">divisor_reg</span>};</pre>
+        <p><code>sub_result</code> is WIDTH+1 bits wide. The extra MSB <code>sub_result[WIDTH]</code> is the borrow/sign flag — <code>0</code> = subtraction succeeded, <code>1</code> = went negative.</p>
+        <div class="inner-h">Step 3 — Restore or keep</div>
+        <table>
+          <tr><th>sub_result[WIDTH]</th><th>remainder gets</th><th>quotient gets</th></tr>
+          <tr><td>0 (success)</td><td>sub_result</td><td>shift in 1</td></tr>
+          <tr><td>1 (fail)</td><td>shifted_rem restored</td><td>shift in 0</td></tr>
+        </table>
+        <div class="inner-h">Step 4 — Loop control</div>
+        <pre>count <= count + 1;
+if (count == WIDTH - 1) state <= S_FINISH;</pre>
+        <p>Runs exactly <code>WIDTH</code> iterations, one per bit, then transitions to S_FINISH.</p>
+        <div class="callout green">Why "restoring"? Because when subtraction fails you <em>restore</em> the remainder back to what it was — unlike non-restoring division which applies a correction at the end.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s2">
+    <div class="sec-title"><span class="sec-num">02</span> Forwarding — what each block does</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Explain what the forwarding parts are doing according to the code.</span></div>
+      <div class="a-body">
+        <div class="inner-h">The problem</div>
+        <p>The instruction in EX needs register values that instructions in MEM or WB haven't written back yet. Forwarding bypasses the register file and feeds the fresh value directly.</p>
+        <div class="inner-h">forwardA decision logic</div>
+        <pre><span class="hl-green">// Priority 1 — value from MEM stage (newest)</span>
+if (ex_mem_RegWrite && (ex_mem_rd != 0) && (ex_mem_rd == id_ex_rs1))
+    forwardA = <span class="hl-yellow">2'b10</span>;
+
+<span class="hl-green">// Priority 2 — value from WB stage</span>
+else if (mem_wb_RegWrite && (mem_wb_rd != 0) && (mem_wb_rd == id_ex_rs1))
+    forwardA = <span class="hl-yellow">2'b01</span>;
+
+<span class="hl-green">// No hazard — use register file value</span>
+else
+    forwardA = <span class="hl-yellow">2'b00</span>;</pre>
+        <p>Three conditions must all be true to forward: the stage is writing a register, it's not x0, and it's writing the register EX needs. <code>forwardB</code> is identical but checks <code>id_ex_rs2</code>.</p>
+        <div class="inner-h">The actual mux</div>
+        <pre>assign forwarded_read_data1 =
+    (forwardA == <span class="hl-yellow">2'b10</span>) ? <span class="hl-red">ex_mem_alu_result</span> :  <span class="hl-muted">// from MEM stage</span>
+    (forwardA == <span class="hl-yellow">2'b01</span>) ? <span class="hl-purple">wb_write_data</span>     :  <span class="hl-muted">// from WB stage</span>
+                          <span class="hl-blue">id_ex_read_data1</span>;   <span class="hl-muted">// register file</span></pre>
+        <div class="inner-h">Why EX/MEM is checked before MEM/WB</div>
+        <p>If two back-to-back instructions both write the same register, EX/MEM has the newer value. The <code>if/else if</code> priority ensures the newest value always wins.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s3">
+    <div class="sec-title"><span class="sec-num">03</span> Load-use stall — how does the pipeline resume?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">How will the pipeline resume after waiting for 1 cycle?</span></div>
+      <div class="a-body">
+        <p><code>load_use_stall</code> is a <strong>combinational wire</strong> — it re-evaluates every cycle automatically. The stall self-clears.</p>
+        <div class="pipe-row">
+          <div class="pipe-label"></div>
+          <div class="pipe-cell p-hdr">C1</div><div class="pipe-cell p-hdr">C2</div><div class="pipe-cell p-hdr">C3</div><div class="pipe-cell p-hdr">C4</div><div class="pipe-cell p-hdr">C5</div><div class="pipe-cell p-hdr">C6</div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="pipe-row">
+          <div class="pipe-label">LW x1</div>
+          <div class="pipe-cell p-if">IF</div><div class="pipe-cell p-id">ID</div><div class="pipe-cell p-ex">EX</div><div class="pipe-cell p-mem">MEM</div><div class="pipe-cell p-wb">WB</div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="pipe-row">
+          <div class="pipe-label">ADD x3,x1,x4</div>
+          <div class="pipe-cell p-empty"></div><div class="pipe-cell p-if">IF</div><div class="pipe-cell p-id">ID</div><div class="pipe-cell p-stl">stall</div><div class="pipe-cell p-fwd">EX←fwd</div><div class="pipe-cell p-mem">MEM</div><div class="pipe-cell p-wb">WB</div>
+        </div>
+        <p style="margin-top:12px;">At C3: <code>load_use_stall=1</code> fires. At C4: the bubble is in ID/EX — <code>id_ex_MemRead=0</code>. The stall condition is gone. Pipeline resumes automatically.</p>
+        <div class="callout blue">Nothing explicitly "resumes" it. The stall stops being asserted, so the frozen IF/ID register flows into ID/EX on the next clock edge as usual.</div>
+        <p>At C5, the loaded value is available via MEM/WB → EX forwarding (<code>forwardA=2'b01</code>).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s4">
+    <div class="sec-title"><span class="sec-num">04</span> Hazard verification — ADD → SUB → AND</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">ADD x1,x2,x3 / SUB x4,x1,x5 / AND x6,x1,x7 — are both hazards fixed?</span></div>
+      <div class="a-body">
+        <div class="pipe-row">
+          <div class="pipe-label"></div>
+          <div class="pipe-cell p-hdr">C1</div><div class="pipe-cell p-hdr">C2</div><div class="pipe-cell p-hdr">C3</div><div class="pipe-cell p-hdr">C4</div><div class="pipe-cell p-hdr">C5</div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="pipe-row">
+          <div class="pipe-label">ADD x1,x2,x3</div>
+          <div class="pipe-cell p-if">IF</div><div class="pipe-cell p-id">ID</div><div class="pipe-cell p-ex">EX</div><div class="pipe-cell p-mem">MEM</div><div class="pipe-cell p-wb">WB</div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="pipe-row">
+          <div class="pipe-label">SUB x4,x1,x5</div>
+          <div class="pipe-cell p-empty"></div><div class="pipe-cell p-if">IF</div><div class="pipe-cell p-id">ID</div><div class="pipe-cell p-fwd">EX←fwd</div><div class="pipe-cell p-mem">MEM</div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="pipe-row">
+          <div class="pipe-label">AND x6,x1,x7</div>
+          <div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-if">IF</div><div class="pipe-cell p-id">ID</div><div class="pipe-cell p-fwd">EX←fwd</div><div class="pipe-cell p-empty"></div><div class="pipe-cell p-empty"></div>
+        </div>
+        <div class="inner-h">Hazard 1 — SUB at C4</div>
+        <p>ADD is in EX/MEM. <code>ex_mem_RegWrite=1, ex_mem_rd=x1=id_ex_rs1</code> → <code>forwardA=2'b10</code> → <code>forwarded_read_data1 = ex_mem_alu_result</code>. ✅</p>
+        <div class="inner-h">Hazard 2 — AND at C5</div>
+        <p>EX/MEM check fails (SUB's destination is x4, not x1). Falls through: <code>mem_wb_RegWrite=1, mem_wb_rd=x1=id_ex_rs1</code> → <code>forwardA=2'b01</code> → <code>forwarded_read_data1 = wb_write_data</code>. ✅</p>
+        <div class="callout green">Both hazards fixed by forwarding alone. No stalls needed.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s5">
+    <div class="sec-title"><span class="sec-num">05</span> ALUSrcB_ctrl — why forwarded_read_data2 appears twice</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">In the alu_input_b mux, forwarded_read_data2 appears for both 2'b00 and as the default. Why?</span></div>
+      <div class="a-body">
+        <table>
+          <tr><th>ALUSrcB_ctrl</th><th>alu_input_b</th><th>Used for</th></tr>
+          <tr><td><code>2'b00</code></td><td>forwarded_read_data2</td><td>R-type (ADD, SUB, AND…)</td></tr>
+          <tr><td><code>2'b01</code></td><td>32'd4</td><td>JAL/JALR — store PC+4 as return address</td></tr>
+          <tr><td><code>2'b10</code></td><td>id_ex_imm</td><td>I/S/B/U-type immediate operations</td></tr>
+          <tr><td><code>2'b11</code></td><td>forwarded_read_data2</td><td>Unused encoding — safe fallback</td></tr>
+        </table>
+        <p><code>2'b11</code> is an <strong>unused encoding</strong> — the control unit never generates it. The designer repeated <code>forwarded_read_data2</code> as a safe fallback rather than leaving <code>'x</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s6">
+    <div class="sec-title"><span class="sec-num">06</span> Is the cleaner ternary an optimization?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Will rewriting the ternary without the duplicate become an optimization?</span></div>
+      <div class="a-body">
+        <p><strong>No</strong> — only a readability improvement. Both versions synthesize to the exact same 4-to-1 mux. The synthesizer sees the logic function and generates identical gates.</p>
+        <div class="callout yellow">An actual optimization would require explicitly marking 2'b11 as a don't-care using <code>casez</code> or <code>unique case</code>, potentially letting the tool reduce it to a 3-to-1 mux. But for a 2-bit select on 32-bit data, the silicon difference is negligible.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s7">
+    <div class="sec-title"><span class="sec-num">07</span> Why is the mul/div stall block left empty?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Why is the stall region left incomplete / empty?</span></div>
+      <div class="a-body">
+        <pre><span class="hl-green">// ID/EX register</span>
+end else if (stall) begin
+    <span class="hl-muted">// Multiplier stall: hold state stable</span>
+    <span class="hl-muted">// ← no assignments = implicit hold = registers freeze</span>
+end</pre>
+        <p>In a clocked <code>always @(posedge clk)</code> block, writing no assignment means the register <strong>holds its current value</strong>. That is exactly what you want — freeze the mul/div instruction in ID/EX while it finishes computing.</p>
+        <div class="callout blue">Compare this to load-use stall which explicitly zeroes everything (injecting a bubble). Mul/div stall does the opposite — it <em>preserves</em> the instruction in place.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s8">
+    <div class="sec-title"><span class="sec-num">08</span> All pipeline hazards — are they all fixed?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Are all hazards for pipelining fixed?</span></div>
+      <div class="a-body">
+        <table>
+          <tr><th>Hazard</th><th>Handled?</th><th>Mechanism</th></tr>
+          <tr><td>RAW — back-to-back ALU</td><td>✅</td><td>EX/MEM → EX forwarding</td></tr>
+          <tr><td>RAW — 2 instructions apart</td><td>✅</td><td>MEM/WB → EX forwarding</td></tr>
+          <tr><td>RAW — load followed immediately</td><td>✅</td><td>Load-use stall + forwarding</td></tr>
+          <tr><td>Control — branch/jump</td><td>✅</td><td>2-cycle flush</td></tr>
+          <tr><td>Structural — mul/div multi-cycle</td><td>✅</td><td>Multi-cycle stall</td></tr>
+          <tr><td>WAR / WAW</td><td>✅ N/A</td><td>Impossible in in-order pipeline</td></tr>
+        </table>
+        <div class="callout yellow"><strong>Subtle gap:</strong> During mul/div stall, <code>ex_mem_alu_result</code> and <code>ex_mem_rd</code> are left stale. Safe only because <code>RegWrite</code>, <code>MemRead</code>, <code>MemWrite</code> are all zeroed — those three signals are the sole gatekeepers of side effects.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s9">
+    <div class="sec-title"><span class="sec-num">09</span> Each hazard explained in detail</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Explain about each hazard and how they got fixed.</span></div>
+      <div class="a-body">
+
+        <div class="inner-h">1. RAW — Back-to-back ALU</div>
+        <p>At C4, ADD is in EX/MEM and SUB needs x1 in EX. <code>ex_mem_RegWrite=1</code>, <code>ex_mem_rd==id_ex_rs1</code> → <code>forwardA=2'b10</code>. ADD's result bypassed directly from EX/MEM register.</p>
+
+        <div class="inner-h">2. RAW — Two instructions apart</div>
+        <p>At C5, ADD is in MEM/WB and AND needs x1 in EX. EX/MEM check fails (different rd). MEM/WB check fires → <code>forwardA=2'b01</code> → value from <code>wb_write_data</code>.</p>
+
+        <div class="inner-h">3. Load-use hazard</div>
+        <p>Forwarding can't help — the memory data isn't available until end of MEM. Fix: stall 1 cycle (freeze IF/ID, inject bubble into ID/EX). Next cycle, loaded value forwards from MEM/WB.</p>
+
+        <div class="inner-h">4. Control hazard — Branch/Jump</div>
+        <p>Branch resolves in EX at cycle 3. Two wrong instructions are in IF and ID. <code>take_branch_or_jump=1</code> → <code>flush=1</code> → both IF/ID and ID/EX replaced with NOPs. PC loaded with <code>id_ex_pc + id_ex_imm</code>. <strong>Cost: 2 wasted cycles per taken branch.</strong></p>
+
+        <div class="inner-h">5. Structural — MUL/DIV multi-cycle</div>
+        <p>While <code>done=0</code>: pipeline frozen, bubbles injected into EX/MEM each cycle. <code>ex_stage_md_active</code> ensures <code>start</code> pulses only once. When <code>done=1</code>, <code>stall=0</code> and the result is latched into EX/MEM.</p>
+
+        <div class="inner-h">6. WAR / WAW — don't exist here</div>
+        <p>In an in-order pipeline, no instruction can overtake another. You can never write before an earlier instruction reads (WAR) or write before an earlier instruction writes (WAW).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s10">
+    <div class="sec-title"><span class="sec-num">10</span> What is flush and why is it used?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">What is this flush? Why is it used?</span></div>
+      <div class="a-body">
+        <p>The pipeline doesn't wait. By the time BEQ resolves in EX (cycle 3), two instructions from the wrong path are already inside the pipeline:</p>
+        <pre>0x00:  BEQ x1, x2, 0x40   <span class="hl-muted">← branch to 0x40</span>
+0x04:  ADD ...             <span class="hl-red">← fetched speculatively (WRONG)</span>
+0x08:  SUB ...             <span class="hl-red">← fetched speculatively (WRONG)</span>
+...
+0x40:  AND ...             <span class="hl-green">← actual next instruction</span></pre>
+        <p>Flush <strong>replaces those two wrong instructions with NOPs</strong> before they modify registers or memory.</p>
+        <div class="inner-h">Why NOP specifically?</div>
+        <p>Zeroing control signals is enough for ID/EX (no writes happen), but for IF/ID you need a valid instruction encoding. <code>32'h00000013</code> = <code>addi x0, x0, 0</code> — architecturally guaranteed to do nothing.</p>
+        <div class="callout blue">Flush = overwrite wrong instructions with NOPs before they reach a stage that has side effects (EX writes registers, MEM writes memory).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s11">
+    <div class="sec-title"><span class="sec-num">11</span> In-order vs Out-of-order pipelining</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">What is in-order pipelining and out-of-order pipelining?</span></div>
+      <div class="a-body">
+        <div class="inner-h">In-Order</div>
+        <p>Instructions enter, execute, and complete in the exact order they appear in the program. No instruction can overtake another. Your RV32IM processor is in-order.</p>
+        <div class="inner-h">The problem with in-order</div>
+        <p>If one instruction is slow (e.g. a load), all instructions behind it must stall — even if they have no dependency on it.</p>
+        <div class="inner-h">Out-of-Order</div>
+        <p>The processor looks ahead at multiple instructions and executes whichever one is ready, regardless of program order. A <strong>Reorder Buffer (ROB)</strong> holds results and commits them in-order at the end so the programmer never sees wrong behaviour.</p>
+        <table>
+          <tr><th>Property</th><th>In-Order</th><th>Out-of-Order</th></tr>
+          <tr><td>Execution order</td><td>Strict program order</td><td>Any ready instruction</td></tr>
+          <tr><td>Hazards to handle</td><td>RAW only</td><td>RAW + WAR + WAW</td></tr>
+          <tr><td>Complexity</td><td>Simple</td><td>Very complex</td></tr>
+          <tr><td>Performance</td><td>Lower</td><td>Higher</td></tr>
+          <tr><td>Examples</td><td>Your RV32IM, ARM Cortex-M</td><td>Intel Core, AMD Ryzen, Apple M-series</td></tr>
+        </table>
+        <div class="callout yellow">WAR and WAW hazards don't exist in your processor because it is in-order. They only appear in out-of-order designs where instructions can overtake each other.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s12">
+    <div class="sec-title"><span class="sec-num">12</span> load_use_stall — is rs1/rs2 really from the next instruction?</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Both are id_ex — how can you say (id_ex_rd == rs1) is a "next instruction" check?</span></div>
+      <div class="a-body">
+        <p>Sharp observation. <code>rs1</code> and <code>rs2</code> are <strong>not</strong> from the ID/EX register. They are declared as plain wires sliced from <code>if_id_instr</code>:</p>
+        <pre><span class="hl-green">// In ID stage — from IF/ID register (one stage BEHIND ID/EX)</span>
+assign rs1 = if_id_instr[19:15];
+assign rs2 = if_id_instr[24:20];</pre>
+        <table>
+          <tr><th>Signal</th><th>Stage</th><th>Meaning</th></tr>
+          <tr><td><code>id_ex_rd</code></td><td>EX stage</td><td>Destination of the load instruction</td></tr>
+          <tr><td><code>rs1, rs2</code></td><td>ID stage</td><td>Sources of the instruction behind it</td></tr>
+        </table>
+        <p>The stall check is correctly asking: <em>"does the load in EX write to a register that the instruction currently in ID wants to read?"</em></p>
+        <div class="callout red">If it had used <code>id_ex_rs1/id_ex_rs2</code> instead, it would be comparing EX against EX — the same instruction against itself, which is meaningless.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section class="section" id="s13">
+    <div class="sec-title"><span class="sec-num">13</span> Why flush and stall are not applied to EX/MEM and MEM/WB</div>
+    <div class="q-block">
+      <div class="q-header"><span class="q-badge q">Q</span><span class="q-text">Why are pipeline_stall and flush cases not used at ex_mem and mem_wb registers?</span></div>
+      <div class="a-body">
+        <div class="inner-h">Load-use stall</div>
+        <p>The hazard is detected when LW is in EX and ADD is in ID. The instructions that need to freeze are <em>behind</em> the load — in IF and ID. EX/MEM and MEM/WB are <em>ahead</em> — already past the problem and must keep moving to complete normally.</p>
+        <div class="inner-h">Branch/jump flush</div>
+        <p>Branch resolves in EX. Wrong instructions are in IF and ID. EX/MEM and MEM/WB contain instructions fetched <em>before</em> the branch — they are correct and must complete.</p>
+        <div class="inner-h">Mul/div stall</div>
+        <p>EX/MEM gets a partial bubble (RegWrite/MemRead/MemWrite zeroed) to prevent side effects. MEM/WB is left alone — it holds a correctly computed instruction that must write back.</p>
+        <table>
+          <tr><th>Register</th><th>Load-use stall</th><th>Branch flush</th><th>Mul/div stall</th></tr>
+          <tr><td>IF/ID</td><td>Frozen</td><td>NOP</td><td>Frozen</td></tr>
+          <tr><td>ID/EX</td><td>Bubble</td><td>NOP</td><td>Held stable</td></tr>
+          <tr><td>EX/MEM</td><td>Normal</td><td>Normal</td><td>Partial bubble</td></tr>
+          <tr><td>MEM/WB</td><td>Normal</td><td>Normal</td><td>Normal</td></tr>
+        </table>
+        <div class="callout blue"><strong>Core rule:</strong> Only touch the registers that contain wrong or premature instructions. Everything ahead of the hazard is correct and must be left alone.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>RV32IM Pipeline Study Notes</span>
+    <span>Sairam Kesanapalli · IIIT Dharwad ECE</span>
+  </footer>
+
+</div>
+</body>
+</html>
